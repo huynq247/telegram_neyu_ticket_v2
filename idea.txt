@@ -1,0 +1,34 @@
+📋 Quản lý Ticket nâng cao:
+/status #27 - Check trạng thái ticket realtime
+/cancel #27 - Hủy ticket đang pending
+/urgent #27 - Escalate ticket lên urgent
+Auto-assign ticket theo skills/department
+
+💬 Chat & Communication:
+Comment trực tiếp vào ticket qua Telegram
+Attach file/photo từ Telegram vào ticket
+Group chat cho team support
+@mention technician trong Telegram
+
+📊 Analytics & Reports:
+/stats - Thống kê ticket cá nhân
+/report daily - Báo cáo hàng ngày
+SLA tracking và warning
+Dashboard realtime qua web
+
+🔔 Smart Notifications:
+Nhắc nhở ticket quá hạn SLA
+Notification theo priority level
+Escalation tự động khi timeout
+Weekly summary report
+
+🤖 AI Assistant:
+Auto-categorize ticket bằng AI
+Suggest solution từ knowledge base
+Chatbot FAQ trước khi tạo ticket
+Smart routing theo content
+👥 Multi-user & Permissions:
+Role-based access (user/technician/admin)
+Department-specific tickets
+Approval workflow
+Customer satisfaction rating
