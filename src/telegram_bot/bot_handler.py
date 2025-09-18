@@ -20,6 +20,7 @@ from telegram.ext import (
 
 # Import các modules
 from .handlers.start_handler import StartHandler
+from .handlers.view_ticket_handler import ViewTicketHandler
 from .services.ticket_service import TicketService
 from .services.user_service import UserService
 from .services.auth_service import OdooAuthService
@@ -64,6 +65,14 @@ class TelegramBotHandler:
         self.keyboards = BotKeyboards()
         self.formatters = BotFormatters()
         self.validators = BotValidators()
+        
+        # Initialize view ticket handler
+        self.view_ticket_handler = ViewTicketHandler(
+            self.ticket_service, 
+            self.formatters, 
+            self.keyboards, 
+            self.auth_service
+        )
     
     # ===============================
     # AUTHENTICATION-AWARE COMMANDS
@@ -232,19 +241,73 @@ class TelegramBotHandler:
             return await self.new_ticket_command(update, context)
     
     async def handle_my_tickets_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle my tickets callback"""
+        """Handle my tickets callback - call the same function as /mytickets command"""
         try:
-            chat_id = str(query.message.chat_id)
-            tickets = await self.ticket_service.get_user_tickets(chat_id)
+            # Create update with callback query - copy from original update
+            fake_update = Update(
+                update_id=0, 
+                callback_query=query,
+                effective_user=query.from_user,
+                effective_chat=query.message.chat
+            )
             
-            message = self.formatters.format_tickets_list(tickets)
-            await query.edit_message_text(message, parse_mode='Markdown')
+            # Call the exact same handler as /mytickets command
+            await self.view_ticket_handler.view_tickets_command(fake_update, context)
             
         except Exception as e:
-            logger.error(f"Error getting tickets for user: {e}")
+            logger.error(f"Error in handle_my_tickets_callback: {e}")
             await query.edit_message_text(
-                "❌ Có lỗi xảy ra khi lấy danh sách tickets. Vui lòng thử lại sau."
+                "❌ Error occurred while loading tickets."
             )
+    
+    async def handle_view_tickets_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle view tickets callback from menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        
+        # Check authentication
+        if not self.view_ticket_handler._is_authenticated(user_id):
+            await query.edit_message_text(
+                "🔒 You need to login first. Use /login to authenticate.",
+                parse_mode='Markdown'
+            )
+            return ConversationHandler.END
+        
+        try:
+            chat_id = str(query.message.chat_id)
+            
+            # Get paginated tickets - use user_id and auth_service
+            pagination_data = await self.ticket_service.get_paginated_tickets(user_id, self.auth_service, page=1, per_page=5)
+            
+            # Format message
+            message = self.formatters.format_paginated_tickets(pagination_data)
+            
+            # Get keyboard
+            keyboard = self.keyboards.get_ticket_list_keyboard(
+                current_page=pagination_data.get('current_page', 1),
+                total_pages=pagination_data.get('total_pages', 1),
+                has_tickets=len(pagination_data.get('tickets', [])) > 0
+            )
+            
+            # Update user state
+            user_state = self.view_ticket_handler._get_user_state(user_id)
+            user_state['current_page'] = 1
+            user_state['last_tickets'] = pagination_data.get('tickets', [])
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+            
+            return self.view_ticket_handler.VIEWING_LIST
+            
+        except Exception as e:
+            logger.error(f"Error in handle_view_tickets_callback: {e}")
+            await query.edit_message_text("❌ Error occurred while loading tickets.")
+            return ConversationHandler.END
     
     async def handle_help_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle help callback"""
@@ -398,7 +461,7 @@ class TelegramBotHandler:
                 
                 # Create ticket
                 destination = user_data.get('destination', 'Vietnam')
-                result = await self.ticket_service.create_ticket(user_data, destination)
+                result = await self.ticket_service.create_ticket(user_data, destination, user_id, self.auth_service)
                 
                 # Format response message
                 if result['success']:
@@ -430,20 +493,7 @@ class TelegramBotHandler:
         await update.message.reply_text("❌ Đã hủy tạo ticket.")
         return ConversationHandler.END
     
-    async def my_tickets_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Xem tickets của user"""
-        try:
-            chat_id = str(update.effective_chat.id)
-            tickets = await self.ticket_service.get_user_tickets(chat_id)
-            
-            message = self.formatters.format_tickets_list(tickets)
-            await update.message.reply_text(message, parse_mode='Markdown')
-            
-        except Exception as e:
-            logger.error(f"Error getting tickets for user: {e}")
-            await update.message.reply_text(
-                "❌ Có lỗi xảy ra khi lấy danh sách tickets. Vui lòng thử lại sau."
-            )
+# Old my_tickets_command removed - now handled by ViewTicketHandler
     
     async def cancel_auth_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Cancel authentication process"""
@@ -499,17 +549,47 @@ class TelegramBotHandler:
             ]
         )
 
+        # View tickets conversation handler
+        view_tickets_conversation_handler = ConversationHandler(
+            entry_points=[
+                CommandHandler('mytickets', self.view_ticket_handler.view_tickets_command),
+                CallbackQueryHandler(self.handle_view_tickets_callback, pattern='^menu_my_tickets$'),
+                MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+            ],
+            states={
+                self.view_ticket_handler.VIEWING_LIST: [
+                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
+                                       pattern='^(view_page_|view_filter_|view_search|back_to_menu)'),
+                ],
+                self.view_ticket_handler.FILTERING: [
+                    CallbackQueryHandler(self.view_ticket_handler.handle_filter_callback, 
+                                       pattern='^(filter_|view_back_to_list)'),
+                ],
+                self.view_ticket_handler.SEARCHING: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_search_input),
+                ],
+                self.view_ticket_handler.VIEWING_DETAIL: [
+                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
+                                       pattern='^view_back_to_list$'),
+                ]
+            },
+            fallbacks=[
+                CommandHandler('cancel', self.view_ticket_handler.cancel_view),
+                CommandHandler('start', self.start_command)
+            ]
+        )
+
         # Add all handlers
         self.application.add_handler(auth_conversation_handler)
+        self.application.add_handler(view_tickets_conversation_handler)
         self.application.add_handler(conversation_handler)
         self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('menu', self.menu_command))
-        self.application.add_handler(CommandHandler('mytickets', self.my_tickets_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
         
         # Add callback query handlers for menu buttons
-        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(my_tickets|help)$'))
+        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(help)$'))
         
         logger.info("Đã setup handlers cho Telegram Bot")
     

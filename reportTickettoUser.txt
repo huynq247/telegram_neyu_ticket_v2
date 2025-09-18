@@ -1,0 +1,44 @@
+1. Tính năng cần phát triển:
+
+📋 Xem danh sách tickets với pagination (hiện tại: chỉ 10 tickets gần nhất)
+🔍 Xem chi tiết ticket với đầy đủ thông tin
+🏷️ Lọc theo trạng thái (New, In Progress, Done, Cancelled)
+⚡ Lọc theo độ ưu tiên (Low, Normal, High, Urgent)
+🔎 Tìm kiếm tickets theo từ khóa
+🎯 Navigation thuận tiện với inline buttons
+
+
+2. Cấu trúc đề xuất:
+📁 src/telegram_bot/handlers/
+  ├── view_ticket_handler.py  # Handler riêng cho view tickets
+  └── ...
+
+📁 src/telegram_bot/services/
+  ├── ticket_service.py      # Mở rộng với view methods
+  └── ...
+
+📁 src/telegram_bot/utils/
+  ├── keyboards.py           # Thêm view ticket keyboards  
+  ├── formatters.py          # Thêm detail view formatters
+  └── ...
+
+
+  3. Flow đề xuất:
+
+  /mytickets 
+   ↓
+📋 List view (10 tickets/page)
+   ↓ [View Detail] [Filter] [Search] [Page 2 →]
+   ↓
+🔍 Detail view hoặc Filter options
+   ↓ [← Back] [Edit] [Close] [Priority]
+   ↓
+Back to list với state được lưu
+
+
+Bạn muốn tôi bắt đầu implement từ phần nào trước? Tôi suggest bắt đầu từ:
+
+Mở rộng TicketService với methods mới
+Tạo ViewTicketHandler với conversation flow
+Cập nhật keyboards và formatters
+Test và integrate

@@ -103,25 +103,25 @@ class TicketManager:
         
         return True
     
-    async def get_user_tickets(self, telegram_chat_id: str) -> List[Dict[str, Any]]:
+    async def get_user_tickets(self, user_email: str) -> List[Dict[str, Any]]:
         """
-        Lấy danh sách tickets của user từ PostgreSQL
+        Lấy danh sách tickets của user từ PostgreSQL theo email
         
         Args:
-            telegram_chat_id: ID chat Telegram
+            user_email: Email của user đã đăng nhập
             
         Returns:
             Danh sách tickets của user
         """
         try:
             # Lấy tickets từ PostgreSQL
-            tickets = self.pg_connector.get_user_tickets(telegram_chat_id)
+            tickets = self.pg_connector.get_user_tickets(user_email)
             
-            logger.info(f"TicketManager: Lấy {len(tickets)} tickets cho user {telegram_chat_id}")
+            logger.info(f"TicketManager: Lấy {len(tickets)} tickets cho user {user_email}")
             return tickets
             
         except Exception as e:
-            logger.error(f"TicketManager: Lỗi lấy tickets user {telegram_chat_id} - {e}")
+            logger.error(f"TicketManager: Lỗi lấy tickets user {user_email} - {e}")
             return []
     
     async def update_ticket(self, ticket_id: int, update_data: Dict[str, Any]) -> bool:

@@ -414,6 +414,14 @@ class PostgreSQLConnector:
                 'sequence': 10
             }
             
+            # Thêm thông tin partner nếu có
+            if 'partner_email' in ticket_data:
+                helpdesk_data['partner_email'] = ticket_data['partner_email']
+                logger.info(f"Adding partner_email: {ticket_data['partner_email']}")
+            
+            if 'partner_name' in ticket_data:
+                helpdesk_data['partner_name'] = ticket_data['partner_name']
+            
             # Tạo INSERT query cho table của destination
             table_name = config['table']
             columns = list(helpdesk_data.keys())
@@ -632,12 +640,12 @@ class PostgreSQLConnector:
             logger.error(f"Lỗi lấy completed tickets: {e}")
             return []
     
-    def get_user_tickets(self, telegram_chat_id: str) -> List[Dict[str, Any]]:
+    def get_user_tickets(self, user_email: str) -> List[Dict[str, Any]]:
         """
-        Lấy tất cả tickets của một user từ Telegram
+        Lấy tất cả tickets của một user theo email
         
         Args:
-            telegram_chat_id: ID chat Telegram
+            user_email: Email của user đã đăng nhập
             
         Returns:
             Danh sách tickets của user
@@ -647,23 +655,22 @@ class PostgreSQLConnector:
             
             query = """
                 SELECT 
-                    pt.id,
-                    pt.name,
-                    pt.description,
-                    pt.state,
-                    pt.priority,
-                    pt.x_tracking_id,
-                    pt.create_date,
-                    pt.write_date,
-                    pps.name as stage_name
-                FROM project_task pt
-                LEFT JOIN project_project_stage pps ON pt.stage_id = pps.id
-                WHERE pt.x_tracking_id = %s
-                ORDER BY pt.create_date DESC
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    'draft' as state,
+                    ht.priority,
+                    ht.number as tracking_id,
+                    ht.create_date,
+                    ht.write_date,
+                    'Open' as stage_name
+                FROM helpdesk_ticket ht
+                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                ORDER BY ht.create_date DESC
                 LIMIT 10;
             """
             
-            cursor.execute(query, (f"TG_{telegram_chat_id}",))
+            cursor.execute(query, (user_email, f"%{user_email}%"))
             rows = cursor.fetchall()
             
             tickets = []
@@ -682,12 +689,223 @@ class PostgreSQLConnector:
                 tickets.append(ticket_info)
             
             cursor.close()
-            logger.info(f"Tìm thấy {len(tickets)} tickets cho user {telegram_chat_id}")
+            logger.info(f"Tìm thấy {len(tickets)} tickets cho user {user_email}")
             return tickets
             
         except Exception as e:
             logger.error(f"Lỗi lấy user tickets: {e}")
             return []
+    
+    def get_filtered_user_tickets(self, user_email: str, status_filter: str = None, priority_filter: int = None) -> List[Dict[str, Any]]:
+        """
+        Lấy tickets của user với filter
+        
+        Args:
+            user_email: Email của user đã đăng nhập
+            status_filter: Filter theo status
+            priority_filter: Filter theo priority
+            
+        Returns:
+            Danh sách tickets được filter
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # Base query
+            query = """
+                SELECT 
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    'draft' as state,
+                    ht.priority,
+                    ht.number as tracking_id,
+                    ht.create_date,
+                    ht.write_date,
+                    'Open' as stage_name
+                FROM helpdesk_ticket ht
+                WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
+            """
+            
+            params = [user_email, f"%{user_email}%"]
+            
+            # Add filters
+            if status_filter:
+                # Since we don't have stage table, just ignore status filter for now
+                pass
+            
+            if priority_filter:
+                query += " AND ht.priority = %s"
+                params.append(str(priority_filter))
+            
+            query += " ORDER BY ht.create_date DESC LIMIT 20;"
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            tickets = []
+            for row in rows:
+                ticket_info = {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'state': row[3],
+                    'priority': row[4],
+                    'tracking_id': row[5],
+                    'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
+                    'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
+                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                }
+                tickets.append(ticket_info)
+            
+            cursor.close()
+            return tickets
+            
+        except Exception as e:
+            logger.error(f"Lỗi lấy filtered tickets: {e}")
+            return []
+    
+    def search_user_tickets(self, user_email: str, search_term: str) -> List[Dict[str, Any]]:
+        """
+        Tìm kiếm tickets của user theo từ khóa
+        
+        Args:
+            user_email: Email của user đã đăng nhập
+            search_term: Từ khóa tìm kiếm
+            
+        Returns:
+            Danh sách tickets khớp với từ khóa
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            query = """
+                SELECT 
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    'draft' as state,
+                    ht.priority,
+                    ht.number as tracking_id,
+                    ht.create_date,
+                    ht.write_date,
+                    'Open' as stage_name
+                FROM helpdesk_ticket ht
+                WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
+                AND (ht.name ILIKE %s OR ht.description ILIKE %s)
+                ORDER BY ht.create_date DESC
+                LIMIT 15;
+            """
+            
+            search_pattern = f"%{search_term}%"
+            cursor.execute(query, (user_email, f"%{user_email}%", search_pattern, search_pattern))
+            rows = cursor.fetchall()
+            
+            tickets = []
+            for row in rows:
+                ticket_info = {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'state': row[3],
+                    'priority': row[4],
+                    'tracking_id': row[5],
+                    'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
+                    'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
+                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                }
+                tickets.append(ticket_info)
+            
+            cursor.close()
+            return tickets
+            
+        except Exception as e:
+            logger.error(f"Lỗi search tickets: {e}")
+            return []
+    
+    def get_paginated_user_tickets(self, user_email: str, page: int = 1, per_page: int = 5) -> Dict[str, Any]:
+        """
+        Lấy tickets với pagination
+        
+        Args:
+            user_email: Email của user đã đăng nhập
+            page: Trang hiện tại (1-indexed)
+            per_page: Số tickets mỗi trang
+            
+        Returns:
+            Dict chứa tickets và thông tin pagination
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # Count total tickets
+            count_query = """
+                SELECT COUNT(*) 
+                FROM helpdesk_ticket ht
+                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+            """
+            cursor.execute(count_query, (user_email, f"%{user_email}%"))
+            total_count = cursor.fetchone()[0]
+            
+            # Calculate pagination
+            total_pages = (total_count + per_page - 1) // per_page
+            offset = (page - 1) * per_page
+            
+            # Get tickets for current page
+            query = """
+                SELECT 
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    'draft' as state,
+                    ht.priority,
+                    ht.number as tracking_id,
+                    ht.create_date,
+                    ht.write_date,
+                    'Open' as stage_name
+                FROM helpdesk_ticket ht
+                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                ORDER BY ht.create_date DESC
+                LIMIT %s OFFSET %s;
+            """
+            
+            cursor.execute(query, (user_email, f"%{user_email}%", per_page, offset))
+            rows = cursor.fetchall()
+            
+            tickets = []
+            for row in rows:
+                ticket_info = {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'state': row[3],
+                    'priority': row[4],
+                    'tracking_id': row[5],
+                    'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
+                    'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
+                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                }
+                tickets.append(ticket_info)
+            
+            cursor.close()
+            
+            return {
+                'tickets': tickets,
+                'total_count': total_count,
+                'current_page': page,
+                'total_pages': total_pages,
+                'per_page': per_page
+            }
+            
+        except Exception as e:
+            logger.error(f"Lỗi get paginated tickets: {e}")
+            return {
+                'tickets': [],
+                'total_count': 0,
+                'current_page': 1,
+                'total_pages': 0,
+                'per_page': per_page
+            }
     
     def close(self) -> None:
         """Đóng kết nối database"""

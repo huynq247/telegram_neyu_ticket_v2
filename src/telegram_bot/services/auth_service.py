@@ -58,11 +58,9 @@ class OdooAuthService:
             if success:
                 return success, user_data, error
             
-            # Fallback authentication for development/testing
-            if email == "huy.nguyen@neyu.co" and password == "Neyu@2025":
-                logger.info("Using fallback authentication for test user")
-                
-                test_user_data = {
+            # Fallback authentication for development (until XML-RPC is fully configured)
+            fallback_users = {
+                "huy.nguyen@neyu.co": {
                     'uid': 1,
                     'name': 'Huy Nguyen',
                     'email': 'huy.nguyen@neyu.co',
@@ -72,9 +70,23 @@ class OdooAuthService:
                     'groups': ['IT Services', 'Help Desk Manager'],
                     'is_helpdesk_manager': True,
                     'is_helpdesk_user': True
+                },
+                "eric.tra@neyu.co": {
+                    'uid': 2,
+                    'name': 'Eric Tra',
+                    'email': 'eric.tra@neyu.co',
+                    'login': 'eric.tra@neyu.co',
+                    'partner_id': 2,
+                    'company_id': 1,
+                    'groups': ['Help Desk User'],
+                    'is_helpdesk_manager': False,
+                    'is_helpdesk_user': True
                 }
-                
-                return True, test_user_data, None
+            }
+            
+            if email in fallback_users and password == "Neyu@2025":
+                logger.info(f"Using fallback authentication for {email}")
+                return True, fallback_users[email], None
             
             # If XML-RPC failed and no fallback, return the XML-RPC error
             return success, user_data, error
@@ -257,6 +269,19 @@ class OdooAuthService:
         """
         is_valid, user_data = self.validate_session(telegram_user_id)
         return user_data if is_valid else None
+    
+    def is_authenticated(self, telegram_user_id: int) -> bool:
+        """
+        Check if user is authenticated
+        
+        Args:
+            telegram_user_id: Telegram user ID
+            
+        Returns:
+            bool: True if user is authenticated and session is valid
+        """
+        is_valid, _ = self.validate_session(telegram_user_id)
+        return is_valid
     
     def _is_helpdesk_manager(self, group_data: list) -> bool:
         """Check if user has helpdesk manager permissions"""
