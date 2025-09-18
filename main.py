@@ -78,9 +78,20 @@ class TelegramNeyuApp:
             
             # 3. Khởi tạo Telegram Bot Handler
             logger.info("Khởi tạo Telegram Bot Handler...")
+            
+            # Create Odoo config dict
+            odoo_config = {
+                'host': settings.odoo_url.split('://')[1].split(':')[0],
+                'port': int(settings.odoo_url.split(':')[2]) if ':' in settings.odoo_url.split('://')[1] else 8069,
+                'database': settings.odoo_db,
+                'username': settings.odoo_username,
+                'password': settings.odoo_password
+            }
+            
             self.telegram_handler = TelegramBotHandler(
                 token=settings.telegram_bot_token,
-                ticket_manager=self.ticket_manager
+                ticket_manager=self.ticket_manager,
+                odoo_config=odoo_config
             )
             
             # Thiết lập liên kết giữa các components

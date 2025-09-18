@@ -1,0 +1,68 @@
+ Architecture Options:
+Option 1: Backend lưu files (Recommended)
+
+Telegram Bot → Your Backend → Files stored locally/cloud
+                ↓
+            Odoo Database (metadata only)
+
+Ưu điểm:
+
+✅ Kiểm soát hoàn toàn files
+✅ Bảo mật tốt hơn
+✅ Có thể resize/compress images
+✅ Virus scanning
+✅ Backup dễ dàng
+
+
+Option 2: Odoo native attachments
+Telegram Bot → Your Backend → Odoo ir.attachment table
+
+Ưu điểm:
+
+✅ Tận dụng Odoo attachment system
+✅ Files linked trực tiếp với tickets
+✅ Odoo UI có thể xem files
+
+Ưu điểm:
+
+✅ Tận dụng Odoo attachment system
+✅ Files linked trực tiếp với tickets
+✅ Odoo UI có thể xem files
+
+🎯 Recommendation: Hybrid Approach
+# File Flow:
+1. User gửi file qua Telegram
+2. Bot download file về backend  
+3. Backend lưu file local: /uploads/tickets/{ticket_id}/
+4. Metadata lưu vào database:
+   - file_path
+   - file_name  
+   - file_size
+   - mime_type
+   - uploaded_by
+   - upload_date
+
+📁 Folder Structure đề xuất:
+TelegramNeyu/
+├── uploads/
+│   ├── tickets/
+│   │   ├── {ticket_id}/
+│   │   │   ├── image1.jpg
+│   │   │   ├── document.pdf
+│   │   │   └── voice.mp3
+│   └── temp/          # Temporary downloads
+├── src/
+└── ...
+
+🔧 Database Schema cần thêm:
+CREATE TABLE ticket_attachments (
+    id SERIAL PRIMARY KEY,
+    ticket_id INTEGER,
+    file_name VARCHAR(255),
+    file_path VARCHAR(500), 
+    file_size INTEGER,
+    mime_type VARCHAR(100),
+    uploaded_by INTEGER,
+    upload_date TIMESTAMP,
+    telegram_file_id VARCHAR(255)
+);
