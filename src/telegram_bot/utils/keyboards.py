@@ -1,15 +1,15 @@
 """
 Telegram Bot Keyboards Module
-Chứa tất cả keyboard layouts và button configurations
+Contains all keyboard layouts and button configurations
 """
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 class BotKeyboards:
-    """Class chứa tất cả keyboard layouts"""
+    """Class containing all keyboard layouts"""
     
     @staticmethod
     def get_destination_keyboard():
-        """Keyboard chọn điểm đến"""
+        """Keyboard for destination selection"""
         keyboard = [
             [InlineKeyboardButton("🇻🇳 Vietnam", callback_data="dest_Vietnam")],
             [InlineKeyboardButton("🇹🇭 Thailand", callback_data="dest_Thailand")],
@@ -22,29 +22,29 @@ class BotKeyboards:
     
     @staticmethod
     def get_priority_keyboard():
-        """Keyboard chọn độ ưu tiên"""
+        """Keyboard for priority selection"""
         keyboard = [
-            [InlineKeyboardButton("🔴 Cao", callback_data="priority_high")],
-            [InlineKeyboardButton("🟡 Trung bình", callback_data="priority_medium")],
-            [InlineKeyboardButton("🟢 Thấp", callback_data="priority_low")]
+            [InlineKeyboardButton("🔴 High", callback_data="priority_high")],
+            [InlineKeyboardButton("🟡 Medium", callback_data="priority_medium")],
+            [InlineKeyboardButton("🟢 Low", callback_data="priority_low")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def get_confirmation_keyboard():
-        """Keyboard xác nhận"""
+        """Confirmation keyboard"""
         keyboard = [
-            [InlineKeyboardButton("✅ Xác nhận", callback_data="confirm_ticket")],
-            [InlineKeyboardButton("❌ Hủy", callback_data="cancel_ticket")]
+            [InlineKeyboardButton("✅ Confirm", callback_data="confirm_ticket")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_ticket")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def get_main_menu_keyboard():
-        """Keyboard menu chính"""
+        """Main menu keyboard"""
         keyboard = [
-            [InlineKeyboardButton("🎫 Tạo Ticket Mới", callback_data="menu_new_ticket")],
-            [InlineKeyboardButton("📋 Xem Tickets Của Tôi", callback_data="menu_my_tickets")],
-            [InlineKeyboardButton("❓ Trợ Giúp", callback_data="menu_help")]
+            [InlineKeyboardButton("🎫 Create New Ticket", callback_data="menu_new_ticket")],
+            [InlineKeyboardButton("📋 View My Tickets", callback_data="menu_my_tickets")],
+            [InlineKeyboardButton("❓ Help", callback_data="menu_help")]
         ]
         return InlineKeyboardMarkup(keyboard)

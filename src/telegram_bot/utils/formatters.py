@@ -19,9 +19,9 @@ class BotFormatters:
     
     # Priority mapping
     PRIORITY_MAP = {
-        'priority_high': (3, '🔴 Cao'),
-        'priority_medium': (2, '🟡 Trung bình'),
-        'priority_low': (1, '🟢 Thấp')
+        'priority_high': (3, '🔴 High'),
+        'priority_medium': (2, '🟡 Medium'),
+        'priority_low': (1, '🟢 Low')
     }
     
     # Status emojis
@@ -44,37 +44,37 @@ class BotFormatters:
     def format_welcome_message(first_name: str) -> str:
         """Format welcome message"""
         return (
-            f"Chào mừng {first_name}! 👋\n"
-            "Tôi là bot hỗ trợ tạo ticket.\n"
-            "Sử dụng các lệnh sau:\n\n"
-            "/newticket - Tạo ticket mới\n"
-            "/mytickets - Xem tickets của bạn\n"
-            "/help - Hướng dẫn sử dụng"
+            f"Welcome {first_name}! 👋\n"
+            "I'm a support ticket bot.\n"
+            "Use the following commands:\n\n"
+            "/newticket - Create new ticket\n"
+            "/mytickets - View your tickets\n"
+            "/help - Help guide"
         )
     
     @staticmethod
     def format_help_message() -> str:
         """Format help message"""
         return (
-            "📋 *Hướng dẫn sử dụng Bot*\n\n"
-            "🆕 */newticket* - Tạo ticket hỗ trợ mới\n"
-            "📝 */mytickets* - Xem danh sách tickets của bạn\n"
-            "❓ */help* - Hiển thị hướng dẫn này\n\n"
-            "💡 *Cách tạo ticket:*\n"
-            "1. Gõ /newticket\n"
-            "2. Chọn điểm đến\n"
-            "3. Nhập mô tả vấn đề\n"
-            "4. Chọn độ ưu tiên\n"
-            "5. Xác nhận tạo ticket\n\n"
-            "✅ Bạn sẽ nhận được thông báo khi ticket được xử lý xong!"
+            "📋 *Bot Usage Guide*\n\n"
+            "🆕 */newticket* - Create new support ticket\n"
+            "📝 */mytickets* - View your ticket list\n"
+            "❓ */help* - Show this guide\n\n"
+            "💡 *How to create a ticket:*\n"
+            "1. Type /newticket\n"
+            "2. Select destination\n"
+            "3. Enter problem description\n"
+            "4. Choose priority level\n"
+            "5. Confirm ticket creation\n\n"
+            "✅ You will receive notifications when your ticket is processed!"
         )
     
     @staticmethod
     def format_destination_selection() -> str:
         """Format destination selection message"""
         return (
-            "🌍 *Chọn điểm đến cho ticket:*\n\n"
-            "Vui lòng chọn quốc gia/khu vực mà bạn cần hỗ trợ:"
+            "🌍 *Select ticket destination:*\n\n"
+            "Please choose the country/region where you need support:"
         )
     
     @staticmethod
@@ -82,18 +82,18 @@ class BotFormatters:
         """Format destination selected message"""
         emoji = BotFormatters.DESTINATION_EMOJIS.get(destination, '🌍')
         return (
-            f"✅ Đã chọn: {emoji} *{destination}*\n\n"
-            "📝 Vui lòng nhập mô tả chi tiết vấn đề của bạn:"
+            f"✅ Selected: {emoji} *{destination}*\n\n"
+            "📝 Please enter a detailed description of your problem:"
         )
     
     @staticmethod
     def format_priority_selection() -> str:
         """Format priority selection message"""
         return (
-            "⚡ *Chọn độ ưu tiên cho ticket:*\n\n"
-            "🔴 *Cao* - Vấn đề khẩn cấp, cần xử lý ngay\n"
-            "🟡 *Trung bình* - Vấn đề quan trọng, xử lý trong ngày\n"
-            "🟢 *Thấp* - Vấn đề thông thường, xử lý khi có thời gian"
+            "⚡ *Select ticket priority:*\n\n"
+            "🔴 *High* - Urgent issue, needs immediate attention\n"
+            "🟡 *Medium* - Important issue, handle within the day\n"
+            "🟢 *Low* - Regular issue, handle when available"
         )
     
     @staticmethod
@@ -103,12 +103,12 @@ class BotFormatters:
         emoji = BotFormatters.DESTINATION_EMOJIS.get(destination, '🌍')
         
         return (
-            "📋 *Xác nhận thông tin ticket:*\n\n"
-            f"👤 *Người tạo:* {user_data['first_name']}\n"
-            f"🌍 *Điểm đến:* {emoji} {destination}\n"
-            f"📝 *Mô tả:* {user_data['description']}\n"
-            f"⚡ *Độ ưu tiên:* {priority_text}\n\n"
-            "Xác nhận tạo ticket?"
+            "📋 *Confirm ticket information:*\n\n"
+            f"👤 *Created by:* {user_data['first_name']}\n"
+            f"🌍 *Destination:* {emoji} {destination}\n"
+            f"📝 *Description:* {user_data['description']}\n"
+            f"⚡ *Priority:* {priority_text}\n\n"
+            "Confirm ticket creation?"
         )
     
     @staticmethod
@@ -122,12 +122,12 @@ class BotFormatters:
         destination_code = result.get('destination_code', destination[:2].upper())
         
         return (
-            "✅ *Ticket đã được tạo thành công!*\n\n"
-            f"🎫 *Mã ticket:* `{ticket_number}`\n"
-            f"📝 *Tên:* {ticket_name}\n"
-            f"🌍 *Điểm đến:* {emoji} {destination} ({destination_code})\n"
-            f"📄 *Mô tả:* {user_data['description'][:100]}...\n\n"
-            "Chúng tôi sẽ xử lý và thông báo kết quả cho bạn sớm nhất!"
+            "✅ *Ticket created successfully!*\n\n"
+            f"🎫 *Ticket ID:* `{ticket_number}`\n"
+            f"📝 *Title:* {ticket_name}\n"
+            f"🌍 *Destination:* {emoji} {destination} ({destination_code})\n"
+            f"📄 *Description:* {user_data['description'][:100]}...\n\n"
+            "We will process and notify you of the results as soon as possible!"
         )
     
     @staticmethod
@@ -144,13 +144,13 @@ class BotFormatters:
         """Format tickets list message"""
         if not tickets:
             return (
-                "📋 Bạn chưa có ticket nào.\n"
-                "Sử dụng /newticket để tạo ticket mới."
+                "📋 You don't have any tickets yet.\n"
+                "Use /newticket to create a new ticket."
             )
         
-        message = "📋 *Danh sách tickets của bạn:*\n\n"
+        message = "📋 *Your tickets list:*\n\n"
         
-        for ticket in tickets[-10:]:  # Hiển thị 10 tickets gần nhất
+        for ticket in tickets[-10:]:  # Show 10 most recent tickets
             status_emoji = BotFormatters.STATUS_EMOJIS.get(
                 ticket.get('stage', 'new'), '❓'
             )
@@ -166,6 +166,15 @@ class BotFormatters:
             )
         
         if len(message) > 4000:
-            message = message[:4000] + "\n\n... (hiển thị 10 tickets gần nhất)"
+            message = message[:4000] + "\n\n... (showing 10 most recent tickets)"
         
         return message
+    
+    @staticmethod
+    def format_ticket_error(error_message: str) -> str:
+        """Format ticket creation error message"""
+        return (
+            "❌ *Unable to create ticket.*\n\n"
+            f"❗ *Error:* {error_message}\n\n"
+            "Please try again later or contact admin for support."
+        )

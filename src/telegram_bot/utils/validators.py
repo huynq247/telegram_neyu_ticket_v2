@@ -1,43 +1,43 @@
 """
 Telegram Bot Validators Module
-Chứa các function validation cho input
+Contains validation functions for input
 """
 import logging
 
 logger = logging.getLogger(__name__)
 
 class BotValidators:
-    """Class chứa các validation methods"""
+    """Class containing validation methods"""
     
     @staticmethod
     def validate_description(description: str) -> tuple[bool, str]:
         """
-        Validate mô tả ticket
+        Validate ticket description
         
         Args:
-            description: Mô tả cần validate
+            description: Description to validate
             
         Returns:
             (is_valid, error_message)
         """
         if not description or not description.strip():
-            return False, "❌ Mô tả không được để trống."
+            return False, "❌ Description cannot be empty."
         
         if len(description.strip()) < 10:
-            return False, "❌ Mô tả quá ngắn. Vui lòng nhập ít nhất 10 ký tự để mô tả vấn đề chi tiết hơn."
+            return False, "❌ Description too short. Please enter at least 10 characters to describe the problem in detail."
         
         if len(description.strip()) > 2000:
-            return False, "❌ Mô tả quá dài. Vui lòng nhập tối đa 2000 ký tự."
+            return False, "❌ Description too long. Please enter a maximum of 2000 characters."
         
         return True, ""
     
     @staticmethod
     def validate_user_data(user_data: dict) -> tuple[bool, str]:
         """
-        Validate dữ liệu user trước khi tạo ticket
+        Validate user data before creating ticket
         
         Args:
-            user_data: Dictionary chứa dữ liệu user
+            user_data: Dictionary containing user data
             
         Returns:
             (is_valid, error_message)
@@ -47,7 +47,7 @@ class BotValidators:
         for field in required_fields:
             if not user_data.get(field):
                 logger.error(f"Missing field {field} in user data")
-                return False, f"❌ Thiếu thông tin cần thiết: {field}"
+                return False, f"❌ Missing required information: {field}"
         
         # Validate description
         desc_valid, desc_error = BotValidators.validate_description(user_data['description'])
@@ -56,7 +56,7 @@ class BotValidators:
         
         # Validate priority
         if user_data['priority'] not in [1, 2, 3]:
-            return False, "❌ Độ ưu tiên không hợp lệ."
+            return False, "❌ Invalid priority level."
         
         return True, ""
     
@@ -66,10 +66,10 @@ class BotValidators:
         Validate destination
         
         Args:
-            destination: Tên destination
+            destination: Destination name
             
         Returns:
-            True nếu hợp lệ
+            True if valid
         """
         valid_destinations = ['Vietnam', 'Thailand', 'India', 'Philippines', 'Malaysia', 'Indonesia']
         return destination in valid_destinations

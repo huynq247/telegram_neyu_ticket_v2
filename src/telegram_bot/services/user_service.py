@@ -16,7 +16,7 @@ class UserService:
     
     def init_user_data(self, user, chat_id: int) -> None:
         """
-        Khởi tạo dữ liệu user mới
+        Initialize new user data
         
         Args:
             user: Telegram user object
@@ -44,12 +44,12 @@ class UserService:
     
     def update_user_data(self, user_id: int, key: str, value: Any) -> None:
         """
-        Cập nhật dữ liệu user
+        Update user data
         
         Args:
             user_id: User ID
-            key: Key cần update
-            value: Giá trị mới
+            key: Key to update
+            value: New value
         """
         if user_id in self.user_data:
             self.user_data[user_id][key] = value
@@ -59,7 +59,7 @@ class UserService:
     
     def clear_user_data(self, user_id: int) -> None:
         """
-        Xóa dữ liệu user
+        Clear user data
         
         Args:
             user_id: User ID
@@ -70,13 +70,13 @@ class UserService:
     
     def has_user_data(self, user_id: int) -> bool:
         """
-        Kiểm tra user có data không
+        Check if user has data
         
         Args:
             user_id: User ID
             
         Returns:
-            True nếu có data
+            True if has data
         """
         return user_id in self.user_data
     

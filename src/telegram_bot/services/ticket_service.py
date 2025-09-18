@@ -15,14 +15,14 @@ class TicketService:
     
     async def create_ticket(self, user_data: Dict[str, Any], destination: str) -> Dict[str, Any]:
         """
-        Tạo ticket mới
+        Create new ticket
         
         Args:
-            user_data: Dữ liệu user
-            destination: Điểm đến
+            user_data: User data
+            destination: Destination
             
         Returns:
-            Kết quả tạo ticket
+            Ticket creation result
         """
         try:
             ticket_data = {
@@ -41,7 +41,7 @@ class TicketService:
             logger.error(f"Error creating ticket: {e}")
             return {
                 'success': False,
-                'message': f'Có lỗi xảy ra khi tạo ticket: {str(e)}'
+                'message': f'Error occurred while creating ticket: {str(e)}'
             }
     
     async def get_user_tickets(self, chat_id: str) -> List[Dict[str, Any]]:
@@ -64,10 +64,10 @@ class TicketService:
     
     def validate_ticket_data(self, user_data: Dict[str, Any]) -> tuple[bool, str]:
         """
-        Validate dữ liệu ticket trước khi tạo
+        Validate ticket data before creation
         
         Args:
-            user_data: Dữ liệu user
+            user_data: User data
             
         Returns:
             (is_valid, error_message)
