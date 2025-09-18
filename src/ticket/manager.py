@@ -29,9 +29,9 @@ class TicketManager:
         # Task cho việc kiểm tra tickets hoàn thành
         self.check_task = None
     
-    async def create_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_ticket(self, ticket_data: Dict[str, Any], destination: str = "Vietnam") -> Dict[str, Any]:
         """
-        Tạo ticket mới trong PostgreSQL
+        Tạo ticket mới trong PostgreSQL với multi-destination support
         
         Args:
             ticket_data: Dictionary chứa thông tin ticket
@@ -39,6 +39,7 @@ class TicketManager:
                 - description: Mô tả chi tiết
                 - telegram_chat_id: ID chat Telegram
                 - priority: Độ ưu tiên (0-3)
+            destination: Điểm đến (Vietnam, Thailand, India, Singapore)
             
         Returns:
             Dictionary chứa kết quả tạo ticket
@@ -51,13 +52,14 @@ class TicketManager:
                     'message': 'Dữ liệu ticket không hợp lệ'
                 }
             
-            # Tạo ticket trong PostgreSQL
-            result = self.pg_connector.create_ticket(ticket_data)
+            # Tạo ticket trong PostgreSQL với destination
+            result = self.pg_connector.create_ticket(ticket_data, destination)
             
             if result['success']:
-                logger.info(f"TicketManager: Tạo ticket {result['ticket_id']} thành công")
+                ticket_number = result.get('ticket_number', f"#{result['ticket_id']}")
+                logger.info(f"TicketManager: Tạo {destination} ticket {ticket_number} thành công")
             else:
-                logger.error(f"TicketManager: Lỗi tạo ticket - {result.get('error', 'Unknown error')}")
+                logger.error(f"TicketManager: Lỗi tạo {destination} ticket - {result.get('error', 'Unknown error')}")
             
             return result
             

@@ -1,11 +1,24 @@
 """
 PostgreSQL Connector Module
 Kết nối trực tiếp với PostgreSQL database thay vì Odoo XML-RPC
+Multi-Destination Support: Vietnam, Thailand, India, Singapore
 """
 import psycopg2
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+import sys
+import os
+
+# Import country configuration
+try:
+    from ..config.country_config import get_country_config, get_supported_countries
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
+    from country_config import get_country_config, get_supported_countries
 
 logger = logging.getLogger(__name__)
 
@@ -155,76 +168,295 @@ class PostgreSQLConnector:
         except Exception as e:
             logger.error(f"Lỗi describe table {table_name}: {e}")
             return []
-    
-    def create_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    def test_helpdesk_ticket_access(self) -> Dict[str, Any]:
         """
-        Tạo ticket mới trong project_task table (Odoo's task system)
+        Test quyền truy cập vào bảng helpdesk_ticket
+        
+        Returns:
+            Dictionary chứa kết quả test
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # Test read access
+            cursor.execute("SELECT COUNT(*) FROM helpdesk_ticket;")
+            count = cursor.fetchone()[0]
+            
+            # Get latest Vietnam tickets
+            cursor.execute("""
+                SELECT id, number, name, description, create_date 
+                FROM helpdesk_ticket 
+                WHERE name LIKE '%TKVN%' OR number LIKE 'HT%'
+                ORDER BY id DESC 
+                LIMIT 5;
+            """)
+            vietnam_tickets = cursor.fetchall()
+            
+            cursor.close()
+            
+            return {
+                'success': True,
+                'has_read_access': True,
+                'record_count': count,
+                'vietnam_tickets': vietnam_tickets,
+                'message': f'Có quyền truy cập helpdesk_ticket với {count} records, {len(vietnam_tickets)} Vietnam tickets'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'has_read_access': False,
+                'error': str(e),
+                'message': f'Lỗi truy cập helpdesk_ticket: {e}'
+            }
+
+    def generate_vietnam_ticket_number(self) -> str:
+        """
+        Tạo số ticket HT theo format hiện tại
+        
+        Returns:
+            Ticket number theo format HT00XXX
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # Lấy HT number cao nhất
+            cursor.execute("""
+                SELECT number 
+                FROM helpdesk_ticket 
+                WHERE number LIKE 'HT%' 
+                ORDER BY CAST(SUBSTRING(number FROM 3) AS INTEGER) DESC 
+                LIMIT 1;
+            """)
+            
+            latest_record = cursor.fetchone()
+            
+            if latest_record and latest_record[0]:
+                # Extract number from "HT00012"
+                import re
+                match = re.search(r'HT(\d+)', latest_record[0])
+                if match:
+                    latest_number = int(match.group(1))
+                    next_number = latest_number + 1
+                    ticket_number = f"HT{str(next_number).zfill(5)}"
+                else:
+                    ticket_number = "HT00013"
+            else:
+                # Start from HT00001
+                ticket_number = "HT00001"
+            
+            cursor.close()
+            logger.info(f"Generated Vietnam Ticket number: {ticket_number}")
+            return ticket_number
+            
+        except Exception as e:
+            logger.error(f"Lỗi tạo Vietnam ticket number: {e}")
+            # Fallback
+            import random
+            return f"HT{str(random.randint(13, 99)).zfill(5)}"
+    
+    def generate_ticket_number(self, country: str, table_name: str = None) -> str:
+        """
+        Tạo số ticket theo quốc gia (Multi-destination support)
+        
+        Args:
+            country: Tên quốc gia (Vietnam, Thailand, India, etc.)
+            table_name: Tên bảng (optional, sẽ lấy từ config)
+            
+        Returns:
+            Ticket number theo format [COUNTRY_CODE]00XXX (VN00001, TH00001, etc.)
+        """
+        try:
+            # Load country config with fallback
+            try:
+                from ..config.country_config import get_country_config
+            except ImportError:
+                # Inline config as fallback
+                COUNTRY_CONFIG = {
+                    'Vietnam': {'code': 'VN', 'table': 'helpdesk_ticket', 'prefix': 'VN'},
+                    'Thailand': {'code': 'TH', 'table': 'helpdesk_ticket_thailand', 'prefix': 'TH'},
+                    'India': {'code': 'IN', 'table': 'helpdesk_ticket_india', 'prefix': 'IN'},
+                    'Singapore': {'code': 'SG', 'table': 'helpdesk_ticket_singapore', 'prefix': 'SG'}
+                }
+                
+                def get_country_config(country_name):
+                    if country_name not in COUNTRY_CONFIG:
+                        raise ValueError(f"Quốc gia '{country_name}' không được hỗ trợ")
+                    return COUNTRY_CONFIG[country_name]
+            
+            config = get_country_config(country)
+            prefix = config['prefix']
+            target_table = table_name or config['table']
+            
+            cursor = self.connection.cursor()
+            
+            # Lấy ticket number cao nhất cho country này
+            cursor.execute(f"""
+                SELECT number 
+                FROM {target_table}
+                WHERE number LIKE '{prefix}%' 
+                ORDER BY CAST(SUBSTRING(number FROM 3) AS INTEGER) DESC 
+                LIMIT 1;
+            """)
+            
+            latest_record = cursor.fetchone()
+            
+            if latest_record and latest_record[0]:
+                # Extract number từ "VN00012", "TH00005", etc.
+                import re
+                match = re.search(f'{prefix}(\\d+)', latest_record[0])
+                if match:
+                    latest_number = int(match.group(1))
+                    next_number = latest_number + 1
+                    ticket_number = f"{prefix}{str(next_number).zfill(5)}"
+                else:
+                    ticket_number = f"{prefix}00001"
+            else:
+                # Start from [PREFIX]00001
+                ticket_number = f"{prefix}00001"
+            
+            cursor.close()
+            logger.info(f"Generated {country} Ticket number: {ticket_number}")
+            return ticket_number
+            
+        except Exception as e:
+            logger.error(f"Lỗi tạo {country} ticket number: {e}")
+            # Fallback - generate random number
+            import random
+            fallback_prefix = country[:2].upper() if len(country) >= 2 else "XX"
+            return f"{fallback_prefix}{str(random.randint(1, 999)).zfill(5)}"
+    
+    def create_ticket(self, ticket_data: Dict[str, Any], destination: str = "Vietnam") -> Dict[str, Any]:
+        """
+        Tạo ticket mới cho điểm đến được chỉ định (Multi-destination support)
         
         Args:
             ticket_data: Dictionary chứa thông tin ticket
-                - title: Tiêu đề ticket
+                - title: Tiêu đề ticket  
                 - description: Mô tả chi tiết
                 - telegram_chat_id: ID chat Telegram để tracking
                 - priority: Độ ưu tiên (0-3, default 1)
+            destination: Điểm đến (Vietnam, Thailand, India, Singapore)
                 
         Returns:
             Dictionary chứa kết quả tạo ticket
         """
         try:
+            # Load country configuration with fallback
+            try:
+                from ..config.country_config import get_country_config
+            except ImportError:
+                # Inline config as fallback
+                COUNTRY_CONFIG = {
+                    'Vietnam': {
+                        'code': 'VN', 'table': 'helpdesk_ticket', 'prefix': 'VN',
+                        'name_template': 'From Telegram Vietnam',
+                        'description_template': 'Ticket từ Vietnam cho user request. {description}',
+                        'team_id': 1, 'stage_id': 1
+                    },
+                    'Thailand': {
+                        'code': 'TH', 'table': 'helpdesk_ticket_thailand', 'prefix': 'TH',
+                        'name_template': 'From Telegram Thailand',
+                        'description_template': 'Ticket từ Thailand cho user request. {description}',
+                        'team_id': 2, 'stage_id': 1
+                    },
+                    'India': {
+                        'code': 'IN', 'table': 'helpdesk_ticket_india', 'prefix': 'IN',
+                        'name_template': 'From Telegram India',
+                        'description_template': 'Ticket từ India cho user request. {description}',
+                        'team_id': 3, 'stage_id': 1
+                    },
+                    'Singapore': {
+                        'code': 'SG', 'table': 'helpdesk_ticket_singapore', 'prefix': 'SG',
+                        'name_template': 'From Telegram Singapore',
+                        'description_template': 'Ticket từ Singapore cho user request. {description}',
+                        'team_id': 4, 'stage_id': 1
+                    }
+                }
+                
+                def get_country_config(country_name):
+                    if country_name not in COUNTRY_CONFIG:
+                        raise ValueError(f"Quốc gia '{country_name}' không được hỗ trợ")
+                    return COUNTRY_CONFIG[country_name]
+            
+            # Get destination configuration
+            config = get_country_config(destination)
+            
             cursor = self.connection.cursor()
             
-            # Chuẩn bị dữ liệu ticket với giá trị mặc định phù hợp
-            from datetime import datetime
+            # Generate ticket number cho destination này
+            ticket_number = self.generate_ticket_number(destination, config['table'])
+            
+            # Chuẩn bị dữ liệu theo config của destination
             current_time = datetime.now()
             
-            task_data = {
-                'name': ticket_data.get('title', 'Support Ticket from Telegram'),
-                'description': ticket_data.get('description', ''),
-                'state': '01_in_progress',  # State hợp lệ cho ticket mới
-                'priority': str(ticket_data.get('priority', 1)),
-                'active': True,
-                'display_in_project': True,
-                'project_id': 1,  # IT Support / Tickets project
-                'stage_id': 1,    # To Do stage  
+            # Format description theo template của destination
+            user_description = ticket_data.get("description", f"User request from {destination}")
+            description_text = config['description_template'].format(description=user_description)
+            description_html = f'<div data-oe-version="1.2">{description_text}</div>'
+            
+            # Tạo data structure cho ticket
+            helpdesk_data = {
+                'number': ticket_number,  # VN00001, TH00001, etc.
+                'name': config['name_template'],  # From Telegram Vietnam, etc.
+                'description': description_html,
+                'priority': str(ticket_data.get('priority', '1')),
+                'stage_id': config['stage_id'],  # Stage cho destination
+                'team_id': config['team_id'],    # Team cho destination
+                'company_id': 1,  # Required field
                 'create_uid': 1,  # Default user
                 'write_uid': 1,   # Default user
-                'create_date': current_time,  # Set create date
-                'write_date': current_time,   # Set write date
-                'x_tracking_id': f"TG_{ticket_data.get('telegram_chat_id', 'unknown')}"
+                'create_date': current_time,
+                'write_date': current_time,
+                'active': True,
+                'unattended': True,
+                'sequence': 10
             }
             
-            # Tạo INSERT query động
-            columns = list(task_data.keys())
-            values = list(task_data.values())
+            # Tạo INSERT query cho table của destination
+            table_name = config['table']
+            columns = list(helpdesk_data.keys())
+            values = list(helpdesk_data.values())
             columns_str = ', '.join(columns)
             placeholders = ', '.join(['%s'] * len(values))
             
+            # Kiểm tra xem table có tồn tại không (fallback về helpdesk_ticket)
+            try:
+                cursor.execute(f"SELECT 1 FROM {table_name} LIMIT 1;")
+            except Exception:
+                logger.warning(f"Table {table_name} không tồn tại, fallback về helpdesk_ticket")
+                table_name = 'helpdesk_ticket'
+            
             insert_query = f"""
-                INSERT INTO project_task ({columns_str})
+                INSERT INTO {table_name} ({columns_str})
                 VALUES ({placeholders})
-                RETURNING id, name, state;
+                RETURNING id, number, name;
             """
             
             cursor.execute(insert_query, values)
             result = cursor.fetchone()
-            ticket_id, ticket_name, ticket_state = result
+            ticket_id, returned_number, ticket_name = result
             
             self.connection.commit()
             cursor.close()
             
-            logger.info(f"Tạo ticket thành công: ID={ticket_id}, Name={ticket_name}")
+            logger.info(f"Tạo {destination} Ticket thành công: ID={ticket_id}, Number={returned_number}, Name={ticket_name}")
             
             return {
                 'success': True,
                 'ticket_id': ticket_id,
+                'ticket_number': returned_number,
                 'ticket_name': ticket_name,
-                'state': ticket_state,
-                'tracking_id': task_data['x_tracking_id'],
-                'message': f'Ticket #{ticket_id} đã được tạo thành công'
+                'destination': destination,
+                'destination_code': config['code'],
+                'ticket_full_id': f"{returned_number} - {ticket_name}",
+                'state': 'created',
+                'message': f'{destination} Ticket {returned_number} - {ticket_name} (#{ticket_id}) đã được tạo thành công'
             }
             
         except Exception as e:
-            logger.error(f"Lỗi tạo ticket: {e}")
+            logger.error(f"Lỗi tạo {destination} ticket: {e}")
             if hasattr(self, 'connection'):
                 try:
                     self.connection.rollback()
@@ -233,8 +465,42 @@ class PostgreSQLConnector:
             return {
                 'success': False,
                 'error': str(e),
-                'message': 'Không thể tạo ticket. Vui lòng thử lại.'
+                'destination': destination,
+                'message': f'Không thể tạo {destination} ticket. Vui lòng thử lại.'
             }
+    
+    # Destination-specific wrapper methods for easy access
+    def create_vietnam_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo Vietnam ticket (VN00XXX - From Telegram Vietnam)"""
+        return self.create_ticket(ticket_data, "Vietnam")
+    
+    def create_thailand_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo Thailand ticket (TH00XXX - From Telegram Thailand)"""
+        return self.create_ticket(ticket_data, "Thailand")
+    
+    def create_india_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo India ticket (IN00XXX - From Telegram India)"""
+        return self.create_ticket(ticket_data, "India")
+    
+    def create_philippines_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo Philippines ticket (PH00XXX - From Telegram Philippines)"""
+        return self.create_ticket(ticket_data, "Philippines")
+    
+    def create_malaysia_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo Malaysia ticket (MY00XXX - From Telegram Malaysia)"""
+        return self.create_ticket(ticket_data, "Malaysia")
+    
+    def create_indonesia_ticket(self, ticket_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Tạo Indonesia ticket (ID00XXX - From Telegram Indonesia)"""
+        return self.create_ticket(ticket_data, "Indonesia")
+    
+    def get_supported_destinations(self) -> List[str]:
+        """Trả về danh sách các destination được hỗ trợ"""
+        try:
+            from ..config.country_config import get_supported_countries
+            return get_supported_countries()
+        except ImportError:
+            return ['Vietnam', 'Thailand', 'India', 'Philippines', 'Malaysia', 'Indonesia']
     
     def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
         """
