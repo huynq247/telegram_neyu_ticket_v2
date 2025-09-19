@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neyu Ticket Bot - Login</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: var(--tg-theme-secondary-bg-color, #f8f9fa);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            color: var(--tg-theme-text-color, #000000);
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--tg-theme-hint-color, #999999);
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: var(--tg-theme-text-color, #000000);
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #cccccc);
+            border-radius: 8px;
+            font-size: 16px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--tg-theme-button-color, #007AFF);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--tg-theme-button-color, #007AFF);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            opacity: 0.9;
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: #ff3b30;
+            font-size: 14px;
+            margin-top: 8px;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 16px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+
+        .emoji {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="header">
+            <div class="emoji">🎫</div>
+            <h1>Neyu Ticket Bot</h1>
+            <p>Login with your Odoo account</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">📧 Email Address</label>
+                <input 
+                    type="email" 
+                    id="email" 
+                    name="email" 
+                    placeholder="your.email@company.com"
+                    required
+                    autocomplete="email"
+                />
+            </div>
+
+            <div class="form-group">
+                <label for="password">🔒 Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter your password"
+                    required
+                    autocomplete="current-password"
+                />
+            </div>
+
+            <button type="submit" class="submit-btn" id="submitBtn">
+                🚀 Login
+            </button>
+
+            <div class="error-message" id="errorMessage"></div>
+            <div class="loading" id="loading">
+                <div>🔄 Logging in...</div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Initialize Telegram Web App
+        const tg = window.Telegram.WebApp;
+        
+        // Expand the Web App to full height
+        tg.expand();
+        
+        // Enable closing confirmation
+        tg.enableClosingConfirmation();
+
+        // Get form elements
+        const form = document.getElementById('loginForm');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const submitBtn = document.getElementById('submitBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const loading = document.getElementById('loading');
+
+        // Handle form submission
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+
+            // Basic validation
+            if (!email || !password) {
+                showError('Please fill in all fields');
+                return;
+            }
+
+            if (!isValidEmail(email)) {
+                showError('Please enter a valid email address');
+                return;
+            }
+
+            // Show loading state
+            showLoading(true);
+            hideError();
+
+            // Prepare data to send back to bot
+            const loginData = {
+                email: email,
+                password: password,
+                action: 'webapp_login'
+            };
+
+            // Send data back to the bot
+            tg.sendData(JSON.stringify(loginData));
+        });
+
+        // Email validation
+        function isValidEmail(email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(email);
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+
+        // Hide error message
+        function hideError() {
+            errorMessage.style.display = 'none';
+        }
+
+        // Show/hide loading state
+        function showLoading(show) {
+            if (show) {
+                loading.style.display = 'block';
+                submitBtn.disabled = true;
+                submitBtn.textContent = '⏳ Logging in...';
+            } else {
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Login';
+            }
+        }
+
+        // Handle back button
+        tg.BackButton.onClick(function() {
+            tg.close();
+        });
+
+        // Show back button
+        tg.BackButton.show();
+
+        // Auto-focus on email field
+        emailInput.focus();
+
+        // Handle Enter key navigation
+        emailInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                passwordInput.focus();
+            }
+        });
+
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                form.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Set main button (alternative to form submit)
+        tg.MainButton.setText('🚀 Login');
+        tg.MainButton.show();
+        
+        tg.MainButton.onClick(function() {
+            form.dispatchEvent(new Event('submit'));
+        });
+
+        // Update main button state based on form validity
+        function updateMainButton() {
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            
+            if (email && password && isValidEmail(email)) {
+                tg.MainButton.enable();
+            } else {
+                tg.MainButton.disable();
+            }
+        }
+
+        // Listen to input changes
+        emailInput.addEventListener('input', updateMainButton);
+        passwordInput.addEventListener('input', updateMainButton);
+
+        // Initial button state
+        updateMainButton();
+
+        // Ready indicator
+        tg.ready();
+    </script>
+</body>
+</html>

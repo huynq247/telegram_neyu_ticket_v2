@@ -9,6 +9,9 @@ from telegram.ext import ContextTypes, ConversationHandler
 from ..services.auth_service import OdooAuthService
 from ..utils.formatters import BotFormatters
 
+# Conversation states - should match bot_handler.py
+WAITING_EMAIL, WAITING_PASSWORD = range(1, 3)
+
 logger = logging.getLogger(__name__)
 
 class AuthHandler:
@@ -40,23 +43,39 @@ class AuthHandler:
         is_valid, user_data = self.auth_service.validate_session(user.id)
         
         if is_valid:
-            await update.message.reply_text(
+            message_text = (
                 f"✅ You are already logged in as *{user_data['name']}*\n"
                 f"📧 Email: {user_data['email']}\n\n"
-                "Use /logout to logout or /menu to access features.",
-                parse_mode='Markdown'
+                "Use /logout to logout or /menu to access features."
             )
+            
+            # Handle both callback query and regular message
+            if update.callback_query:
+                await update.callback_query.edit_message_text(
+                    message_text,
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    message_text,
+                    parse_mode='Markdown'
+                )
             return ConversationHandler.END
         
-        # Start login process
+        # Start login process - simple version
         welcome_message = (
             "🔐 *Login to Odoo Account*\n\n"
-            "Please enter your Odoo email address to continue:\n\n"
-            "💡 Use the same credentials you use to login to Odoo system.\n"
-            "Type /cancel to abort login."
+            "Please enter your email address to begin:"
         )
         
-        await update.message.reply_text(welcome_message, parse_mode='Markdown')
+        # Handle both callback query and regular message
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                welcome_message,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(welcome_message, parse_mode='Markdown')
         
         # Initialize login session
         self.login_sessions[user.id] = {
@@ -65,7 +84,7 @@ class AuthHandler:
         }
         
         logger.info(f"User {user.id} ({user.username}) started login process")
-        return 1  # WAITING_EMAIL state
+        return WAITING_EMAIL
     
     async def receive_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
@@ -81,83 +100,84 @@ class AuthHandler:
         if not self._validate_email(email):
             await update.message.reply_text(
                 "❌ Invalid email format. Please enter a valid email address:\n\n"
-                "Example: user@company.com"
+                "Example: john.doe@company.com"
             )
-            return 1  # Stay in WAITING_EMAIL state
+            return WAITING_EMAIL  # Stay in WAITING_EMAIL state
         
-        # Store email in login session
-        if user.id not in self.login_sessions:
-            await update.message.reply_text("❌ Login session expired. Please use /login to start again.")
-            return ConversationHandler.END
+        # Store email in session
+        if user.id in self.login_sessions:
+            self.login_sessions[user.id]['email'] = email
+            self.login_sessions[user.id]['step'] = 'waiting_password'
         
-        self.login_sessions[user.id]['email'] = email
-        self.login_sessions[user.id]['step'] = 'waiting_password'
-        
+        # Ask for password
         await update.message.reply_text(
-            f"📧 Email: `{email}`\n\n"
-            "🔑 Now please enter your Odoo password:\n\n"
-            "⚠️ *Security Note:* Your password will not be stored, only used for authentication.",
-            parse_mode='Markdown'
+            f"📧 Email: {email}\n\n"
+            "🔒 Now enter your password:"
         )
         
         logger.info(f"User {user.id} provided email: {email}")
-        return 2  # WAITING_PASSWORD state
+        return WAITING_PASSWORD
     
     async def receive_password(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
-        Handle password input and authenticate with Odoo
+        Handle password input and complete authentication
         
         Returns:
-            -1: End conversation (success or failure)
+            ConversationHandler.END: End conversation
         """
         user = update.effective_user
         password = update.message.text.strip()
         
-        # Get login session
+        # Get stored email from session
         if user.id not in self.login_sessions:
-            await update.message.reply_text("❌ Login session expired. Please use /login to start again.")
+            await update.message.reply_text(
+                "❌ Session expired. Please start over with /login"
+            )
             return ConversationHandler.END
         
-        login_session = self.login_sessions[user.id]
-        email = login_session.get('email')
+        email = self.login_sessions[user.id].get('email')
         
         if not email:
-            await update.message.reply_text("❌ Email not found. Please use /login to start again.")
+            await update.message.reply_text(
+                "❌ Email not found. Please start over with /login"
+            )
             return ConversationHandler.END
         
-        # Delete the password message for security
+        # Delete the message containing password for security
         try:
             await update.message.delete()
-        except Exception:
-            pass  # Message might already be deleted
+        except Exception as e:
+            logger.warning(f"Could not delete password message: {e}")
         
-        # Show authentication in progress
-        processing_message = await update.effective_chat.send_message(
-            "🔄 Authenticating with Odoo...\n"
-            "Please wait a moment."
+        # Show processing message
+        processing_message = await update.get_bot().send_message(
+            chat_id=update.effective_chat.id,
+            text="🔄 *Authenticating...*\n\n"
+                 f"📧 Email: {email}\n"
+                 "⏳ Verifying credentials with Odoo...",
+            parse_mode='Markdown'
         )
         
-        try:
-            # Authenticate with Odoo
-            success, user_data, error_message = self.auth_service.authenticate_user(email, password)
+        # Attempt authentication
+        is_authenticated, user_data, error_message = self.auth_service.authenticate_user(email, password)
+        
+        if is_authenticated:
+            # Create session
+            session_token = self.auth_service.create_session(user.id, user_data)
             
-            if success:
-                # Create user session
-                session_token = self.auth_service.create_session(user.id, user_data)
-                
-                # Success message
+            if session_token:
                 success_text = (
-                    f"✅ *Authentication Successful!*\n\n"
-                    f"👤 Welcome, *{user_data['name']}*\n"
-                    f"📧 Email: {user_data['email']}\n"
-                    f"🏢 Company: {user_data.get('company_id', 'N/A')}\n\n"
+                    "✅ *Login Successful!*\n\n"
+                    f"👤 Welcome, *{user_data['name']}*!\n"
+                    f"📧 {email}\n"
+                    f"🏢 {user_data.get('company_name', 'N/A')}\n\n"
                 )
                 
                 # Add permissions info from user_data
                 if user_data.get('is_helpdesk_manager'):
                     success_text += "👑 *Helpdesk Manager* - Full access\n"
                 elif user_data.get('is_helpdesk_user'):
-                    success_text += "� *Helpdesk User* - Standard access\n"
+                    success_text += "🎫 *Helpdesk User* - Standard access\n"
                 else:
                     success_text += "👤 *User* - Basic access\n"
                 
@@ -168,33 +188,43 @@ class AuthHandler:
                 logger.info(f"User {user.id} ({email}) authenticated successfully")
                 
             else:
-                # Authentication failed
-                error_text = (
-                    "❌ *Authentication Failed*\n\n"
-                    f"Error: {error_message}\n\n"
-                    "Please check your credentials and try again.\n"
-                    "Use /login to retry."
+                await processing_message.edit_text(
+                    "❌ *Session Error*\n\n"
+                    "Login succeeded but failed to create session.\n"
+                    "Please try again with /login.",
+                    parse_mode='Markdown'
                 )
                 
-                await processing_message.edit_text(error_text, parse_mode='Markdown')
-                
-                logger.warning(f"Authentication failed for {user.id} ({email}): {error_message}")
-        
-        except Exception as e:
-            logger.error(f"Error during authentication for {user.id}: {e}")
-            await processing_message.edit_text(
-                "❌ *System Error*\n\n"
-                "An error occurred during authentication.\n"
-                "Please try again later or contact support.",
-                parse_mode='Markdown'
+        else:
+            # Authentication failed
+            error_text = (
+                "❌ *Login Failed*\n\n"
+                f"Error: {error_message}\n\n"
+                "Please check your credentials and try again.\n"
+                "Use /login to retry."
             )
+            
+            await processing_message.edit_text(error_text, parse_mode='Markdown')
+            
+            logger.warning(f"Login failed for {user.id} ({email}): {error_message}")
         
-        finally:
-            # Clean up login session
-            if user.id in self.login_sessions:
-                del self.login_sessions[user.id]
-        
+        # Clean up login session
+        self.login_sessions.pop(user.id, None)
         return ConversationHandler.END
+    
+    def _validate_email(self, email: str) -> bool:
+        """
+        Basic email validation
+        
+        Args:
+            email: Email address to validate
+            
+        Returns:
+            bool: True if email format is valid
+        """
+        import re
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email) is not None
     
     async def logout_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /logout command"""
@@ -224,7 +254,7 @@ class AuthHandler:
         else:
             await update.message.reply_text("❌ Error during logout. Please try again.")
     
-    async def cancel_login(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def cancel_auth_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle login cancellation"""
         user = update.effective_user
         
@@ -240,33 +270,39 @@ class AuthHandler:
         logger.info(f"User {user.id} cancelled login process")
         return ConversationHandler.END
     
-    def _validate_email(self, email: str) -> bool:
-        """Basic email validation"""
-        import re
-        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        return re.match(pattern, email) is not None
-    
-    def require_authentication(self, func):
-        """Decorator to require authentication for bot commands"""
-        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
-            user = update.effective_user
-            
-            # Check if user is authenticated
-            is_valid, user_data = self.auth_service.validate_session(user.id)
-            
-            if not is_valid:
-                await update.message.reply_text(
-                    "🔐 *Authentication Required*\n\n"
-                    "Please login to your Odoo account first.\n\n"
-                    "Use /login to authenticate.",
-                    parse_mode='Markdown'
-                )
-                return
-            
-            # Add user_data to context for use in the wrapped function
-            context.user_data['odoo_user'] = user_data
-            
-            # Call the original function
-            return await func(update, context, *args, **kwargs)
+    # Decorator for methods that require authentication
+    def require_auth(self):
+        """
+        Decorator to require authentication for handler methods
         
-        return wrapper
+        Usage:
+            @auth_handler.require_auth()
+            async def some_handler(update, context):
+                # This handler requires authentication
+                pass
+        """
+        def decorator(func):
+            async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+                user_id = update.effective_user.id
+                
+                # Check authentication
+                is_valid, user_data = self.auth_service.validate_session(user_id)
+                
+                if not is_valid:
+                    await update.message.reply_text(
+                        "🔐 *Authentication Required*\n\n"
+                        "You need to be logged in to use this feature.\n\n"
+                        "Please login to your Odoo account first.\n\n"
+                        "Use /login to authenticate.",
+                        parse_mode='Markdown'
+                    )
+                    return
+                
+                # Add user_data to context for use in the wrapped function
+                context.user_data['odoo_user'] = user_data
+                
+                # Call the original function
+                return await func(update, context, *args, **kwargs)
+            
+            return wrapper
+        return decorator

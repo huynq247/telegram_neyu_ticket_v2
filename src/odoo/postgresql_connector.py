@@ -838,11 +838,15 @@ class PostgreSQLConnector:
         try:
             cursor = self.connection.cursor()
             
-            # Count total tickets
+            # Count total tickets (limit to max 20 most recent)
             count_query = """
-                SELECT COUNT(*) 
-                FROM helpdesk_ticket ht
-                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                SELECT COUNT(*) FROM (
+                    SELECT ht.id 
+                    FROM helpdesk_ticket ht
+                    WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                    ORDER BY ht.create_date DESC
+                    LIMIT 20
+                ) as limited_tickets
             """
             cursor.execute(count_query, (user_email, f"%{user_email}%"))
             total_count = cursor.fetchone()[0]
@@ -851,7 +855,7 @@ class PostgreSQLConnector:
             total_pages = (total_count + per_page - 1) // per_page
             offset = (page - 1) * per_page
             
-            # Get tickets for current page
+            # Get tickets for current page (from max 20 most recent)
             query = """
                 SELECT 
                     ht.id,
@@ -863,8 +867,12 @@ class PostgreSQLConnector:
                     ht.create_date,
                     ht.write_date,
                     'Open' as stage_name
-                FROM helpdesk_ticket ht
-                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                FROM (
+                    SELECT * FROM helpdesk_ticket ht2
+                    WHERE ht2.partner_email = %s OR ht2.partner_email ILIKE %s
+                    ORDER BY ht2.create_date DESC
+                    LIMIT 20
+                ) ht
                 ORDER BY ht.create_date DESC
                 LIMIT %s OFFSET %s;
             """

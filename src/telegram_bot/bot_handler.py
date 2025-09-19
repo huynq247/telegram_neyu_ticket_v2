@@ -21,6 +21,8 @@ from telegram.ext import (
 # Import các modules
 from .handlers.start_handler import StartHandler
 from .handlers.view_ticket_handler import ViewTicketHandler
+from .handlers.menu_handler import MenuHandler
+from .handlers.ticket_creation_handler import TicketCreationHandler, WAITING_DESTINATION, WAITING_DESCRIPTION, WAITING_PRIORITY
 from .services.ticket_service import TicketService
 from .services.user_service import UserService
 from .services.auth_service import OdooAuthService
@@ -31,8 +33,6 @@ from .utils.validators import BotValidators
 
 logger = logging.getLogger(__name__)
 
-# States cho conversation
-WAITING_DESTINATION, WAITING_DESCRIPTION, WAITING_PRIORITY = range(3)
 # Authentication states
 WAITING_EMAIL, WAITING_PASSWORD = range(1, 3)
 
@@ -73,6 +73,23 @@ class TelegramBotHandler:
             self.keyboards, 
             self.auth_service
         )
+        
+        # Initialize menu handler
+        self.menu_handler = MenuHandler(
+            self.auth_service,
+            self.keyboards,
+            self.formatters,
+            self.user_service
+        )
+        
+        # Initialize ticket creation handler
+        self.ticket_creation_handler = TicketCreationHandler(
+            self.auth_service,
+            self.keyboards,
+            self.formatters,
+            self.user_service,
+            self.ticket_service
+        )
     
     # ===============================
     # AUTHENTICATION-AWARE COMMANDS
@@ -110,11 +127,17 @@ class TelegramBotHandler:
                 "🔐 Please login with your Odoo account to access ticket features.\n\n"
                 "Available commands:\n"
                 "• /login - Login with your Odoo account\n"
-                "• /help - Show all available commands\n\n"
+                "• /help - Show all available commands\n"
+                "• Just type 'hi' or 'hello' to show this menu again\n\n"
                 "💡 *Note:* You need to authenticate before creating or managing tickets."
             )
             
-            await update.message.reply_text(welcome_message, parse_mode='HTML')
+            keyboard = self.keyboards.get_login_keyboard()
+            await update.message.reply_text(
+                welcome_message, 
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command with authentication awareness"""
@@ -146,11 +169,16 @@ class TelegramBotHandler:
                 "🤖 *Neyu Ticket Bot - Available Commands*\n\n"
                 
                 "🔐 *Authentication:*\n"
-                "• /login - Login with your Odoo account\n\n"
+                "• /login - Login with your Odoo account\n"
+                "  └ Step-by-step or quick login (`email:password`)\n\n"
                 
                 "ℹ️ *General:*\n"
                 "• /help - Show this help message\n"
-                "• /start - Show welcome message\n\n"
+                "• /start - Show welcome message\n"
+                "• Just type 'hi' or 'hello' - Same as /start\n\n"
+                
+                "⚡ *Quick Login Tip:*\n"
+                "Use format `email:password` for faster authentication!\n\n"
                 
                 "💡 *Note:* You need to login before accessing ticket features."
             )
@@ -186,369 +214,22 @@ class TelegramBotHandler:
             parse_mode='HTML'
         )
     
-    async def handle_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle menu button callbacks"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = update.effective_user.id
-        callback_data = query.data
-        
-        # Check authentication for all menu actions
-        is_valid, user_data = self.auth_service.validate_session(user_id)
-        
-        if not is_valid:
-            await query.edit_message_text(
-                "🔐 Your session has expired. Please use /login to authenticate again."
-            )
-            return
-        
-        logger.info(f"Menu callback: {callback_data} from user {user_id}")
-        
-        # Handle different menu options - REMOVE menu_my_tickets to avoid conflict
-        if callback_data == "menu_new_ticket":
-            # For menu new ticket, we need to start the destination selection directly
-            user = query.from_user
-            chat_id = query.message.chat_id
-            
-            # Initialize user data
-            self.user_service.init_user_data(user, chat_id)
-            
-            # Show destination selection
-            keyboard = self.keyboards.get_destination_keyboard()
-            message = self.formatters.format_destination_selection()
-            
-            await query.edit_message_text(
-                message,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        elif callback_data == "menu_help":
-            await self.handle_help_callback(query, context)
-        elif callback_data == "menu_logout":
-            await self.handle_logout_callback(query, context)
-        else:
-            await query.edit_message_text("❓ Unknown menu option.")
-    
-    async def handle_new_ticket_callback(self, update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle new ticket creation from menu button"""
-        # When called from conversation handler, update is Update object
-        # When called from menu callback, update is Update object with callback_query
-        query = update.callback_query
-        user = query.from_user
-        chat_id = query.message.chat_id
-        
-        # Initialize user data
-        self.user_service.init_user_data(user, chat_id)
-        
-        # Show destination selection
-        keyboard = self.keyboards.get_destination_keyboard()
-        message = self.formatters.format_destination_selection()
-        
-        await query.edit_message_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_DESTINATION
+
     
 
     
-    async def handle_view_tickets_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle view tickets callback from menu"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        
-        # Check authentication
-        if not self.view_ticket_handler._is_authenticated(user_id):
-            await query.edit_message_text(
-                "🔒 You need to login first. Use /login to authenticate.",
-                parse_mode='HTML'
-            )
-            return ConversationHandler.END
-        
-        try:
-            chat_id = str(query.message.chat_id)
-            
-            # Get paginated tickets - use user_id and auth_service
-            pagination_data = await self.ticket_service.get_paginated_tickets(user_id, self.auth_service, page=1, per_page=5)
-            
-            # Format message
-            message = self.formatters.format_paginated_tickets(pagination_data)
-            
-            # Get keyboard
-            keyboard = self.keyboards.get_ticket_list_keyboard(
-                current_page=pagination_data.get('current_page', 1),
-                total_pages=pagination_data.get('total_pages', 1),
-                has_tickets=len(pagination_data.get('tickets', [])) > 0
-            )
-            
-            # Update user state
-            user_state = self.view_ticket_handler._get_user_state(user_id)
-            user_state['current_page'] = 1
-            user_state['last_tickets'] = pagination_data.get('tickets', [])
-            
-            await query.edit_message_text(
-                message,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-            
-            return self.view_ticket_handler.VIEWING_LIST
-            
-        except Exception as e:
-            logger.error(f"Error in handle_view_tickets_callback: {e}")
-            await query.edit_message_text("❌ Error occurred while loading tickets.")
-            return ConversationHandler.END
+
     
-    async def handle_help_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle help callback"""
-        user_id = query.from_user.id
-        is_valid, user_data = self.auth_service.validate_session(user_id)
-        
-        if is_valid:
-            help_text = (
-                "🤖 *Neyu Ticket Bot Help*\n\n"
-                
-                "🎫 *Ticket Features:*\n"
-                "• Create tickets for 6 countries\n"
-                "• Set priority levels (Low, Medium, High)\n"
-                "• Track your ticket status\n\n"
-                
-                "💡 *Tips:*\n"
-                "• Provide clear descriptions for faster resolution\n"
-                "• Use appropriate priority levels\n\n"
-                
-                f"👤 Logged in as: *{user_data['name']}*"
-            )
-        else:
-            help_text = (
-                "🤖 *Neyu Ticket Bot Help*\n\n"
-                
-                "🔐 *Authentication Required*\n"
-                "Please use /login to access ticket features.\n\n"
-                
-                "💡 *Available Commands:*\n"
-                "• /login - Login with Odoo account\n"
-                "• /help - Show this help message"
-            )
-        
-        await query.edit_message_text(help_text, parse_mode='HTML')
+
     
-    async def handle_logout_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle logout callback from menu"""
-        user = query.from_user
-        
-        # Check if user is logged in
-        is_valid, user_data = self.auth_service.validate_session(user.id)
-        
-        if not is_valid:
-            await query.edit_message_text(
-                "ℹ️ You are not currently logged in.\n"
-                "Use /login to authenticate."
-            )
-            return
-        
-        # Revoke session
-        success = self.auth_service.revoke_session(user.id)
-        
-        if success:
-            await query.edit_message_text(
-                f"✅ Successfully logged out.\n\n"
-                f"Goodbye, *{user_data['name']}*!\n\n"
-                "Use /login to authenticate again.",
-                parse_mode='HTML'
-            )
-            logger.info(f"User {user.id} ({user_data['email']}) logged out from menu")
-        else:
-            await query.edit_message_text("❌ Error during logout. Please try again.")
-    
-    async def handle_back_to_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle back to menu callback"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        
-        # Clear user data when going back to menu
-        self.user_service.clear_user_data(user_id)
-        
-        # Check authentication
-        is_valid, user_data = self.auth_service.validate_session(user_id)
-        
-        if is_valid:
-            keyboard = self.keyboards.get_main_menu_keyboard()
-            menu_text = (
-                f"🏠 *Main Menu*\n\n"
-                f"👤 Logged in as: *{user_data['name']}*\n"
-                f"📧 Email: {user_data['email']}\n\n"
-                "Choose an option below:"
-            )
-            await query.edit_message_text(
-                menu_text,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        else:
-            await query.edit_message_text(
-                "🔐 Your session has expired. Please use /login to authenticate again."
-            )
+
         
         return ConversationHandler.END
     
     # ===============================
     # TICKET CONVERSATION HANDLERS
     # ===============================
-    
-    async def new_ticket_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Bắt đầu tạo ticket mới"""
-        user = update.effective_user
-        chat_id = update.effective_chat.id
-        
-        # Initialize user data
-        self.user_service.init_user_data(user, chat_id)
-        
-        # Show destination selection
-        keyboard = self.keyboards.get_destination_keyboard()
-        message = self.formatters.format_destination_selection()
-        
-        await update.message.reply_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_DESTINATION
-    
-    async def destination_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Xử lý callback chọn destination"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        
-        # Get destination from callback
-        destination = self.user_service.get_destination_from_callback(query.data)
-        self.user_service.update_user_data(user_id, 'destination', destination)
-        
-        # Format and send confirmation message
-        message = self.formatters.format_destination_selected(destination)
-        await query.edit_message_text(message, parse_mode='HTML')
-        
-        return WAITING_DESCRIPTION
-    
-    async def description_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Xử lý tin nhắn mô tả"""
-        user_id = update.effective_user.id
-        description = update.message.text.strip()
-        
-        # Validate description
-        is_valid, error_message = self.validators.validate_description(description)
-        if not is_valid:
-            await update.message.reply_text(error_message)
-            return WAITING_DESCRIPTION
-        
-        # Save description
-        self.user_service.update_user_data(user_id, 'description', description)
-        
-        # Show priority selection
-        keyboard = self.keyboards.get_priority_keyboard()
-        message = self.formatters.format_priority_selection()
-        
-        await update.message.reply_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_PRIORITY
-    
-    async def priority_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Xử lý callback chọn độ ưu tiên"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        
-        # Get priority info
-        priority_code, priority_text = self.ticket_service.get_priority_info(query.data)
-        self.user_service.update_user_data(user_id, 'priority', priority_code)
-        
-        # Get user data for confirmation
-        user_data = self.user_service.get_user_data(user_id)
-        
-        # Format confirmation message
-        confirmation_text = self.formatters.format_ticket_confirmation(user_data, priority_text)
-        keyboard = self.keyboards.get_confirmation_keyboard()
-        
-        await query.edit_message_text(
-            confirmation_text,
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
-        
-        return WAITING_PRIORITY
-    
-    async def confirm_ticket_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Xử lý xác nhận tạo ticket"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        
-        if query.data == "cancel_ticket":
-            await query.edit_message_text("❌ Đã hủy tạo ticket.")
-            self.user_service.clear_user_data(user_id)
-            return ConversationHandler.END
-        
-        if query.data == "confirm_ticket":
-            try:
-                # Get and validate user data
-                user_data = self.user_service.get_user_data(user_id)
-                is_valid, error_message = self.ticket_service.validate_ticket_data(user_data)
-                
-                if not is_valid:
-                    await query.edit_message_text(error_message)
-                    self.user_service.clear_user_data(user_id)
-                    return ConversationHandler.END
-                
-                # Create ticket
-                destination = user_data.get('destination', 'Vietnam')
-                result = await self.ticket_service.create_ticket(user_data, destination, user_id, self.auth_service)
-                
-                # Format response message
-                if result['success']:
-                    message = self.formatters.format_ticket_success(result, user_data)
-                    keyboard = self.keyboards.get_back_to_menu_keyboard()
-                    logger.info(f"Ticket created successfully for user {user_id}")
-                    await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
-                else:
-                    message = self.formatters.format_ticket_error(result.get('message', 'Unknown error'))
-                    logger.error(f"Failed to create ticket for user {user_id}")
-                    await query.edit_message_text(message, parse_mode='HTML')
-                
-                # Clear user data
-                self.user_service.clear_user_data(user_id)
-                
-            except Exception as e:
-                logger.error(f"Exception creating ticket for user {user_id}: {e}")
-                await query.edit_message_text(
-                    "❌ Có lỗi xảy ra khi tạo ticket. Vui lòng thử lại sau."
-                )
-                self.user_service.clear_user_data(user_id)
-        
-        return ConversationHandler.END
-    
-    async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Hủy tạo ticket"""
-        user_id = update.effective_user.id
-        self.user_service.clear_user_data(user_id)
-        
-        await update.message.reply_text("❌ Đã hủy tạo ticket.")
-        return ConversationHandler.END
+
     
 # Old my_tickets_command removed - now handled by ViewTicketHandler
     
@@ -558,6 +239,18 @@ class TelegramBotHandler:
             "🚫 Authentication cancelled. Use /login to try again."
         )
         return ConversationHandler.END
+    
+    async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle inline keyboard callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "show_help":
+            # Show help
+            await self.help_command(update, context)
+        elif query.data == "back_to_menu":
+            # Return to start menu
+            await self.start_command(update, context)
     
     # ===============================
     # BOT SETUP AND MANAGEMENT
@@ -569,41 +262,46 @@ class TelegramBotHandler:
             logger.error("Application chưa được khởi tạo")
             return
         
-        # Conversation handler cho tạo ticket
+        # Conversation handler cho tạo ticket - using ticket creation handler
         conversation_handler = ConversationHandler(
             entry_points=[
-                CommandHandler('newticket', self.new_ticket_command),
-                CallbackQueryHandler(self.handle_new_ticket_callback, pattern='^menu_new_ticket$')
+                CommandHandler('newticket', self.ticket_creation_handler.new_ticket_command),
+                CallbackQueryHandler(self.ticket_creation_handler.handle_new_ticket_callback, pattern='^menu_new_ticket$')
             ],
             states={
                 WAITING_DESTINATION: [
-                    CallbackQueryHandler(self.destination_callback, pattern='^dest_'),
-                    CallbackQueryHandler(self.handle_back_to_menu_callback, pattern='^back_to_menu$')
+                    CallbackQueryHandler(self.ticket_creation_handler.destination_callback, pattern='^dest_'),
+                    CallbackQueryHandler(self.menu_handler.handle_back_to_menu_callback, pattern='^back_to_menu$')
                 ],
                 WAITING_DESCRIPTION: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.description_handler)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.ticket_creation_handler.description_handler)
                 ],
                 WAITING_PRIORITY: [
-                    CallbackQueryHandler(self.priority_callback, pattern='^priority_'),
-                    CallbackQueryHandler(self.confirm_ticket_callback, pattern='^(confirm|cancel)_ticket$')
+                    CallbackQueryHandler(self.ticket_creation_handler.priority_callback, pattern='^priority_'),
+                    CallbackQueryHandler(self.ticket_creation_handler.confirm_ticket_callback, pattern='^(confirm|cancel)_ticket$')
                 ]
             },
             fallbacks=[
-                CommandHandler('cancel', self.cancel_command),
+                CommandHandler('cancel', self.ticket_creation_handler.cancel_command),
+                CommandHandler('menu', self.menu_command),
                 CommandHandler('start', self.start_command)
             ]
         )
         
         # Authentication conversation handler
         auth_conversation_handler = ConversationHandler(
-            entry_points=[CommandHandler('login', self.auth_handler.login_command)],
+            entry_points=[
+                CommandHandler('login', self.auth_handler.login_command),
+                CallbackQueryHandler(self.auth_handler.login_command, pattern='^start_login$')
+            ],
             states={
                 WAITING_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.auth_handler.receive_email)],
                 WAITING_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.auth_handler.receive_password)],
             },
             fallbacks=[
-                CommandHandler('cancel', self.cancel_auth_command),
-                CommandHandler('start', self.start_handler.start_command)
+                CommandHandler('cancel', self.auth_handler.cancel_auth_command),
+                CommandHandler('menu', self.menu_command),
+                CommandHandler('start', self.start_command)
             ]
         )
 
@@ -611,28 +309,29 @@ class TelegramBotHandler:
         view_tickets_conversation_handler = ConversationHandler(
             entry_points=[
                 CommandHandler('mytickets', self.view_ticket_handler.view_tickets_command),
-                CallbackQueryHandler(self.handle_view_tickets_callback, pattern='^menu_my_tickets$'),
+                CallbackQueryHandler(self.view_ticket_handler.view_tickets_command, pattern='^menu_my_tickets$'),
                 MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
             ],
             states={
                 self.view_ticket_handler.VIEWING_LIST: [
                     CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^(view_page_|view_filter_|view_search|back_to_menu)'),
-                ],
-                self.view_ticket_handler.FILTERING: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_filter_callback, 
-                                       pattern='^(filter_|view_back_to_list)'),
+                                       pattern='^(view_page_\d+|view_page_info|view_search|view_back_to_list|back_to_menu)$'),
+                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
                 ],
                 self.view_ticket_handler.SEARCHING: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_search_input),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
+                                       pattern='^view_back_to_list$'),
                 ],
                 self.view_ticket_handler.VIEWING_DETAIL: [
                     CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
                                        pattern='^view_back_to_list$'),
+                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
                 ]
             },
             fallbacks=[
                 CommandHandler('cancel', self.view_ticket_handler.cancel_view),
+                CommandHandler('menu', self.menu_command),
                 CommandHandler('start', self.start_command)
             ]
         )
@@ -646,11 +345,22 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('menu', self.menu_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
         
-        # Add callback query handlers for menu buttons (excluding menu_my_tickets - handled by conversation)
-        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(new_ticket|help|logout)$'))
+        # Add "hi" message handler - works like /start
+        self.application.add_handler(MessageHandler(filters.Regex(r'^(hi|Hi|HI|hello|Hello|HELLO|xin chào|chào)$'), self.start_command))
         
-        # Add handler for back_to_menu callback
-        self.application.add_handler(CallbackQueryHandler(self.handle_back_to_menu_callback, pattern='^back_to_menu$'))
+        # Add fallback handler for detail commands
+        self.application.add_handler(
+            MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+        )
+        
+        # Add callback query handlers for welcome screen help button only (start_login handled by auth conversation)
+        self.application.add_handler(CallbackQueryHandler(self.handle_callback_query, pattern='^show_help$'))
+        
+        # Add callback query handlers for menu buttons (excluding menu_my_tickets and menu_new_ticket - handled by conversations)
+        self.application.add_handler(CallbackQueryHandler(self.menu_handler.handle_menu_callback, pattern='^menu_(help|logout)$'))
+        
+        # Add global handler for back_to_menu (fallback when not in conversation)
+        self.application.add_handler(CallbackQueryHandler(self.menu_handler.handle_back_to_menu_callback, pattern='^back_to_menu$'))
         
         logger.info("Đã setup handlers cho Telegram Bot")
     
@@ -661,47 +371,42 @@ class TelegramBotHandler:
         logger.info("Telegram Bot đã được khởi tạo")
     
     async def start_polling(self) -> None:
-        """Bắt đầu polling - Sử dụng threading để tránh event loop conflict"""
+        """Bắt đầu polling - Manual lifecycle management"""
         if not self.application:
             await self.initialize()
         
         logger.info("Bắt đầu Telegram Bot polling...")
         
-        def run_bot():
-            """Run bot in separate thread"""
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(
-                    self.application.run_polling(drop_pending_updates=True)
-                )
-            except Exception as e:
-                logger.error(f"Bot polling error: {e}")
-            finally:
-                loop.close()
-        
-        # Start bot in separate thread
-        self.bot_thread = threading.Thread(target=run_bot, daemon=False)
-        self.bot_thread.start()
-        logger.info("Telegram Bot polling started successfully")
-        
-        # Keep function running
-        self.running = True
-        while self.running and hasattr(self, 'bot_thread') and self.bot_thread.is_alive():
-            await asyncio.sleep(1)
+        try:
+            self.running = True
+            
+            # Manual lifecycle management to avoid event loop conflicts
+            async with self.application:
+                await self.application.start()
+                await self.application.updater.start_polling(drop_pending_updates=True)
+                
+                # Keep running until stopped
+                while self.running:
+                    await asyncio.sleep(1)
+                    
+        except Exception as e:
+            logger.error(f"Bot polling error: {e}")
+            # Don't re-raise to allow graceful shutdown
+        finally:
+            self.running = False
+            logger.info("Bot polling stopped")
     
     async def stop(self) -> None:
         """Dừng bot"""
-        if self.application:
-            logger.info("Đang dừng Telegram Bot...")
-            try:
-                self.running = False
-                self.application.stop()
-                
-                if hasattr(self, 'bot_thread') and self.bot_thread.is_alive():
-                    self.bot_thread.join(timeout=5)
+        logger.info("Đang dừng Telegram Bot...")
+        try:
+            self.running = False
+            
+            # Stop updater if running
+            if self.application and hasattr(self.application, 'updater'):
+                if self.application.updater.running:
+                    await self.application.updater.stop()
                     
-            except Exception as e:
-                logger.error(f"Error stopping bot: {e}")
-            logger.info("Telegram Bot đã dừng")
+        except Exception as e:
+            logger.error(f"Error stopping bot: {e}")
+        logger.info("Telegram Bot đã dừng")

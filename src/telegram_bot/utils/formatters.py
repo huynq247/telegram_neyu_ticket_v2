@@ -2,6 +2,7 @@
 Telegram Bot Formatters Module
 Chứa các function format message và text
 """
+import re
 from typing import Dict, Any, List
 
 class BotFormatters:
@@ -62,6 +63,26 @@ class BotFormatters:
             escaped_text = escaped_text.replace(char, f'\\{char}')
         
         return escaped_text
+    
+    @staticmethod
+    def strip_html_tags(text: str) -> str:
+        """
+        Remove HTML tags from text
+        
+        Args:
+            text: Text with HTML tags
+            
+        Returns:
+            Clean text without HTML tags
+        """
+        if not text:
+            return ""
+        
+        # Remove HTML tags
+        clean_text = re.sub(r'<[^>]+>', '', str(text))
+        # Remove extra whitespace
+        clean_text = ' '.join(clean_text.split())
+        return clean_text
     
     @staticmethod
     def format_welcome_message(first_name: str) -> str:
@@ -228,8 +249,10 @@ class BotFormatters:
             ticket.get('priority', 1), '🟡'
         )
         
-        # Format description with length limit and escape special characters
+        # Format description with HTML stripping, length limit and escape special characters
         description = ticket.get('description', 'No description')
+        # Strip HTML tags first
+        description = BotFormatters.strip_html_tags(description)
         if len(description) > 200:
             description = description[:200] + "..."
         
@@ -283,24 +306,52 @@ class BotFormatters:
             status_emoji = BotFormatters.STATUS_EMOJIS.get(
                 ticket.get('stage_name', '').lower(), '❓'
             )
-            priority_emoji = BotFormatters.PRIORITY_EMOJIS.get(
-                ticket.get('priority', 1), '🟡'
-            )
             
-            # Limit title length - no need to escape for HTML
+            # Get priority as text to avoid emoji issues
+            priority_raw = ticket.get('priority', 1)
+            priority_text = "Medium"  # Default
+            
+            try:
+                # Convert to int if it's string
+                priority_value = int(priority_raw) if isinstance(priority_raw, str) else priority_raw
+                
+                if priority_value == 1:
+                    priority_text = "Low"
+                elif priority_value == 2:
+                    priority_text = "Medium"
+                elif priority_value >= 3:
+                    priority_text = "High"
+                else:
+                    priority_text = "Medium"
+            except (ValueError, TypeError):
+                priority_text = "Medium"
+            
+            # Limit title length
             title = ticket.get('name', 'Untitled')
             if len(title) > 30:
                 title = title[:30] + "..."
             
-            # HTML escape only special HTML characters
+            # Get ticket number (tracking_id)
+            ticket_number = ticket.get('tracking_id', ticket.get('number', f"T{ticket.get('id', 'N/A')}"))
+            
+            # Get description (first 100 chars) and clean HTML tags
+            description = ticket.get('description', 'No description')
+            description = BotFormatters.strip_html_tags(description)  # Clean HTML first
+            if len(description) > 100:
+                description = description[:100] + "..."
+            
+            # HTML escape for display
             title = title.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            description = description.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             date_str = str(ticket.get('create_date', 'N/A'))
+            stage_name = ticket.get('stage_name', 'Unknown')
             
             message += (
                 f"{i}. {status_emoji} <b>{title}</b>\n"
-                f"   🎫 ID: <code>{ticket.get('id', 'N/A')}</code> {priority_emoji}\n"
-                f"   📅 {date_str}\n"
-                f"   ➡️ /detail_{ticket.get('id', 0)}\n\n"
+                f"   🎫 Number: <code>{ticket_number}</code> Priority: {priority_text}\n"
+                f"   📊 Status: <b>{stage_name}</b>\n"
+                f"   📅 Created: {date_str}\n"
+                f"   📝 {description}\n\n"
             )
         
         if len(message) > 4000:
@@ -404,3 +455,26 @@ class BotFormatters:
             message += f"... and {len(tickets) - 8} more results"
         
         return message
+    
+    @staticmethod
+    def format_description_request(destination: str) -> str:
+        """
+        Format message requesting ticket description
+        
+        Args:
+            destination: Selected destination
+            
+        Returns:
+            Formatted message requesting description
+        """
+        return (
+            f"✈️ <b>Destination:</b> {destination}\n\n"
+            f"📝 <b>Step 2: Describe your issue</b>\n"
+            f"Please provide a detailed description of your problem or request.\n\n"
+            f"💡 <b>Tips:</b>\n"
+            f"• Be specific about what happened\n"
+            f"• Include error messages if any\n"
+            f"• Mention what you were trying to do\n"
+            f"• Add any relevant dates or times\n\n"
+            f"Type your description below:"
+        )

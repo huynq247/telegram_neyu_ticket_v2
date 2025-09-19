@@ -28,6 +28,7 @@ class TelegramNeyuApp:
         self.telegram_handler = None
         self.ticket_manager = None
         self.running = False
+        self.bot_task = None
     
     def validate_configuration(self) -> bool:
         """
@@ -118,8 +119,8 @@ class TelegramNeyuApp:
                 check_interval=settings.ticket_check_interval
             )
             
-            # Bắt đầu Telegram Bot
-            await self.telegram_handler.start_polling()
+            # Bắt đầu Telegram Bot trong background task
+            self.bot_task = asyncio.create_task(self.telegram_handler.start_polling())
             
             logger.info("🚀 Tất cả services đã khởi động")
             
@@ -139,6 +140,14 @@ class TelegramNeyuApp:
             # Dừng Telegram Bot
             if self.telegram_handler:
                 await self.telegram_handler.stop()
+            
+            # Cancel bot task
+            if hasattr(self, 'bot_task') and self.bot_task:
+                self.bot_task.cancel()
+                try:
+                    await self.bot_task
+                except asyncio.CancelledError:
+                    pass
             
             logger.info("✅ Tất cả services đã dừng")
             

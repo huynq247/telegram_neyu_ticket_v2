@@ -52,7 +52,7 @@ class BotKeyboards:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
-    def get_ticket_list_keyboard(current_page: int = 1, total_pages: int = 1, has_tickets: bool = True):
+    def get_ticket_list_keyboard(current_page: int = 1, total_pages: int = 1, has_tickets: bool = True, tickets: list = None):
         """
         Keyboard for ticket list navigation
         
@@ -60,16 +60,31 @@ class BotKeyboards:
             current_page: Current page number
             total_pages: Total number of pages
             has_tickets: Whether user has tickets
+            tickets: List of tickets to create detail buttons
         """
         keyboard = []
         
         if has_tickets:
-            # Filter options
-            keyboard.append([
-                InlineKeyboardButton("🏷️ Filter Status", callback_data="view_filter_status"),
-                InlineKeyboardButton("⚡ Filter Priority", callback_data="view_filter_priority")
-            ])
+            # Add detail buttons for each ticket in a compact format
+            if tickets:
+                # Group detail buttons in rows of 2 for better space usage
+                detail_buttons = []
+                for i, ticket in enumerate(tickets, 1):
+                    ticket_id = ticket.get('id')
+                    if ticket_id:
+                        detail_buttons.append(
+                            InlineKeyboardButton(f"📄 {i}", callback_data=f"view_detail_{ticket_id}")
+                        )
+                
+                # Add detail buttons in rows of 3 for compact layout
+                for i in range(0, len(detail_buttons), 3):
+                    row = detail_buttons[i:i+3]
+                    keyboard.append(row)
+                
+                # Add separator
+                keyboard.append([InlineKeyboardButton("────────────", callback_data="separator")])
             
+            # Search option only
             keyboard.append([
                 InlineKeyboardButton("🔍 Search", callback_data="view_search")
             ])
@@ -113,43 +128,44 @@ class BotKeyboards:
         ]
         return InlineKeyboardMarkup(keyboard)
     
-    @staticmethod
-    def get_status_filter_keyboard():
-        """Keyboard for status filtering"""
-        keyboard = [
-            [
-                InlineKeyboardButton("🆕 New", callback_data="filter_status_new"),
-                InlineKeyboardButton("🔄 In Progress", callback_data="filter_status_progress")
-            ],
-            [
-                InlineKeyboardButton("✅ Done", callback_data="filter_status_done"),
-                InlineKeyboardButton("❌ Cancelled", callback_data="filter_status_cancelled")
-            ],
-            [
-                InlineKeyboardButton("🔍 All Status", callback_data="filter_status_all")
-            ],
-            [InlineKeyboardButton("⬅️ Back", callback_data="view_back_to_list")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
-    
-    @staticmethod
-    def get_priority_filter_keyboard():
-        """Keyboard for priority filtering"""
-        keyboard = [
-            [
-                InlineKeyboardButton("🔴 Urgent (4)", callback_data="filter_priority_4"),
-                InlineKeyboardButton("🟠 High (3)", callback_data="filter_priority_3")
-            ],
-            [
-                InlineKeyboardButton("🟡 Normal (2)", callback_data="filter_priority_2"),
-                InlineKeyboardButton("🟢 Low (1)", callback_data="filter_priority_1")
-            ],
-            [
-                InlineKeyboardButton("🔍 All Priorities", callback_data="filter_priority_all")
-            ],
-            [InlineKeyboardButton("⬅️ Back", callback_data="view_back_to_list")]
-        ]
-        return InlineKeyboardMarkup(keyboard)
+    # REMOVED - Filter keyboards no longer needed
+    # @staticmethod
+    # def get_status_filter_keyboard():
+    #     """Keyboard for status filtering"""
+    #     keyboard = [
+    #         [
+    #             InlineKeyboardButton("🆕 New", callback_data="filter_status_new"),
+    #             InlineKeyboardButton("🔄 In Progress", callback_data="filter_status_progress")
+    #         ],
+    #         [
+    #             InlineKeyboardButton("✅ Done", callback_data="filter_status_done"),
+    #             InlineKeyboardButton("❌ Cancelled", callback_data="filter_status_cancelled")
+    #         ],
+    #         [
+    #             InlineKeyboardButton("🔍 All Status", callback_data="filter_status_all")
+    #         ],
+    #         [InlineKeyboardButton("⬅️ Back", callback_data="view_back_to_list")]
+    #     ]
+    #     return InlineKeyboardMarkup(keyboard)
+    # 
+    # @staticmethod
+    # def get_priority_filter_keyboard():
+    #     """Keyboard for priority filtering"""
+    #     keyboard = [
+    #         [
+    #             InlineKeyboardButton("🔴 Urgent (4)", callback_data="filter_priority_4"),
+    #             InlineKeyboardButton("🟠 High (3)", callback_data="filter_priority_3")
+    #         ],
+    #         [
+    #             InlineKeyboardButton("🟡 Normal (2)", callback_data="filter_priority_2"),
+    #             InlineKeyboardButton("🟢 Low (1)", callback_data="filter_priority_1")
+    #         ],
+    #         [
+    #             InlineKeyboardButton("🔍 All Priorities", callback_data="filter_priority_all")
+    #         ],
+    #         [InlineKeyboardButton("⬅️ Back", callback_data="view_back_to_list")]
+    #     ]
+    #     return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def get_search_result_keyboard(current_page: int = 1, total_pages: int = 1):
@@ -183,3 +199,13 @@ class BotKeyboards:
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def get_login_keyboard():
+        """Login keyboard for unauthenticated users"""
+        keyboard = [
+            [InlineKeyboardButton("🔐 Login", callback_data="start_login")],
+            [InlineKeyboardButton("❓ Help", callback_data="show_help")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    

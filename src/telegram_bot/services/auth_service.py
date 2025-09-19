@@ -24,17 +24,18 @@ class OdooAuthService:
         self.odoo_url = odoo_url
         self.odoo_db = odoo_db
         
+        # XML-RPC endpoints - COMMENTED OUT FOR NOW
         # Auto-detect the best endpoint (try proxy on port 80 first)
-        if ':15432' in odoo_url or ':8069' in odoo_url:
-            # Extract host and try port 80 for proxy setup
-            host = odoo_url.split('://')[1].split(':')[0]
-            self.proxy_url = f"http://{host}"
-            logger.info(f"Using proxy URL for XML-RPC: {self.proxy_url}")
-            self.common_endpoint = f'{self.proxy_url}/xmlrpc/2/common'
-            self.object_endpoint = f'{self.proxy_url}/xmlrpc/2/object'
-        else:
-            self.common_endpoint = f'{odoo_url}/xmlrpc/2/common'
-            self.object_endpoint = f'{odoo_url}/xmlrpc/2/object'
+        # if ':15432' in odoo_url or ':8069' in odoo_url:
+        #     # Extract host and try port 80 for proxy setup
+        #     host = odoo_url.split('://')[1].split(':')[0]
+        #     self.proxy_url = f"http://{host}"
+        #     logger.info(f"Using proxy URL for XML-RPC: {self.proxy_url}")
+        #     self.common_endpoint = f'{self.proxy_url}/xmlrpc/2/common'
+        #     self.object_endpoint = f'{self.proxy_url}/xmlrpc/2/object'
+        # else:
+        #     self.common_endpoint = f'{odoo_url}/xmlrpc/2/common'
+        #     self.object_endpoint = f'{odoo_url}/xmlrpc/2/object'
         
         # Session storage (in production, use Redis or database)
         self.active_sessions = {}
@@ -53,10 +54,10 @@ class OdooAuthService:
         try:
             logger.info(f"Attempting authentication for user: {email}")
             
-            # Try XML-RPC authentication first
-            success, user_data, error = self._try_xmlrpc_auth(email, password)
-            if success:
-                return success, user_data, error
+            # Try XML-RPC authentication first - COMMENTED OUT FOR NOW
+            # success, user_data, error = self._try_xmlrpc_auth(email, password)
+            # if success:
+            #     return success, user_data, error
             
             # Fallback authentication for development (until XML-RPC is fully configured)
             fallback_users = {
@@ -88,104 +89,106 @@ class OdooAuthService:
                 logger.info(f"Using fallback authentication for {email}")
                 return True, fallback_users[email], None
             
-            # If XML-RPC failed and no fallback, return the XML-RPC error
-            return success, user_data, error
+            # If no fallback user found, return authentication failure
+            logger.warning(f"Authentication failed for {email} - not in fallback users or wrong password")
+            return False, None, "Invalid email or password"
             
         except Exception as e:
             logger.error(f"Unexpected error during authentication: {e}")
             return False, None, "Authentication failed due to system error"
     
-    def _try_xmlrpc_auth(self, email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
-        """
-        Try XML-RPC authentication with multiple endpoints
-        
-        Returns:
-            (success, user_data, error_message)
-        """
-        endpoints_to_try = [
-            (self.common_endpoint, self.object_endpoint),  # Proxy on port 80
-        ]
-        
-        # If using proxy, also try direct port 8069 as fallback
-        if hasattr(self, 'proxy_url'):
-            host = self.proxy_url.replace('http://', '').replace('https://', '')
-            direct_url = f"http://{host}:8069"
-            endpoints_to_try.append((
-                f"{direct_url}/xmlrpc/2/common",
-                f"{direct_url}/xmlrpc/2/object"
-            ))
-        
-        last_error = "XML-RPC connection failed"
-        
-        for common_endpoint, object_endpoint in endpoints_to_try:
-            try:
-                logger.info(f"Trying XML-RPC authentication via: {common_endpoint}")
-                
-                # Connect to Odoo common endpoint
-                common = xmlrpc.client.ServerProxy(common_endpoint)
-                
-                # Authenticate with Odoo
-                uid = common.authenticate(self.odoo_db, email, password, {})
-                
-                if not uid:
-                    logger.warning(f"Authentication failed for user: {email}")
-                    return False, None, "Invalid email or password"
-                
-                # Get user information
-                models = xmlrpc.client.ServerProxy(object_endpoint)
-                
-                user_data = models.execute_kw(
-                    self.odoo_db, uid, password,
-                    'res.users', 'read', [uid],
-                    {
-                        'fields': [
-                            'name', 'email', 'login', 'partner_id', 
-                            'groups_id', 'company_id', 'active'
-                        ]
-                    }
-                )
-                
-                if not user_data or not user_data[0].get('active'):
-                    logger.warning(f"User account inactive: {email}")
-                    return False, None, "User account is inactive"
-                
-                user_info = user_data[0]
-                
-                # Get user groups for permissions
-                group_data = models.execute_kw(
-                    self.odoo_db, uid, password,
-                    'res.groups', 'read', [user_info['groups_id']],
-                    {'fields': ['name', 'category_id']}
-                )
-                
-                # Format user data
-                formatted_user = {
-                    'uid': uid,
-                    'name': user_info['name'],
-                    'email': user_info['email'],
-                    'login': user_info['login'],
-                    'partner_id': user_info['partner_id'][0] if user_info['partner_id'] else None,
-                    'company_id': user_info['company_id'][0] if user_info['company_id'] else None,
-                    'groups': [group['name'] for group in group_data],
-                    'is_helpdesk_manager': self._is_helpdesk_manager(group_data),
-                    'is_helpdesk_user': self._is_helpdesk_user(group_data)
-                }
-                
-                logger.info(f"XML-RPC authentication successful for user: {email} via {common_endpoint}")
-                return True, formatted_user, None
-                
-            except xmlrpc.client.Fault as e:
-                logger.error(f"Odoo XML-RPC error via {common_endpoint}: {e}")
-                last_error = f"XML-RPC service error: {e}"
-                continue
-                
-            except Exception as e:
-                logger.error(f"Connection error via {common_endpoint}: {e}")
-                last_error = f"Connection failed: {e}"
-                continue
-        
-        # All endpoints failed
-        return False, None, last_error
+    # COMMENTED OUT - XML-RPC Authentication temporarily disabled
+    # def _try_xmlrpc_auth(self, email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    #     """
+    #     Try XML-RPC authentication with multiple endpoints
+    #     
+    #     Returns:
+    #         (success, user_data, error_message)
+    #     """
+    #     endpoints_to_try = [
+    #         (self.common_endpoint, self.object_endpoint),  # Proxy on port 80
+    #     ]
+    #     
+    #     # If using proxy, also try direct port 8069 as fallback
+    #     if hasattr(self, 'proxy_url'):
+    #         host = self.proxy_url.replace('http://', '').replace('https://', '')
+    #         direct_url = f"http://{host}:8069"
+    #         endpoints_to_try.append((
+    #             f"{direct_url}/xmlrpc/2/common",
+    #             f"{direct_url}/xmlrpc/2/object"
+    #         ))
+    #     
+    #     last_error = "XML-RPC connection failed"
+    #     
+    #     for common_endpoint, object_endpoint in endpoints_to_try:
+    #         try:
+    #             logger.info(f"Trying XML-RPC authentication via: {common_endpoint}")
+    #             
+    #             # Connect to Odoo common endpoint
+    #             common = xmlrpc.client.ServerProxy(common_endpoint)
+    #             
+    #             # Authenticate with Odoo
+    #             uid = common.authenticate(self.odoo_db, email, password, {})
+    #             
+    #             if not uid:
+    #                 logger.warning(f"Authentication failed for user: {email}")
+    #                 return False, None, "Invalid email or password"
+    #             
+    #             # Get user information
+    #             models = xmlrpc.client.ServerProxy(object_endpoint)
+    #             
+    #             user_data = models.execute_kw(
+    #                 self.odoo_db, uid, password,
+    #                 'res.users', 'read', [uid],
+    #                 {
+    #                     'fields': [
+    #                         'name', 'email', 'login', 'partner_id', 
+    #                         'groups_id', 'company_id', 'active'
+    #                     ]
+    #                 }
+    #             )
+    #             
+    #             if not user_data or not user_data[0].get('active'):
+    #                 logger.warning(f"User account inactive: {email}")
+    #                 return False, None, "User account is inactive"
+    #             
+    #             user_info = user_data[0]
+    #             
+    #             # Get user groups for permissions
+    #             group_data = models.execute_kw(
+    #                 self.odoo_db, uid, password,
+    #                 'res.groups', 'read', [user_info['groups_id']],
+    #                 {'fields': ['name', 'category_id']}
+    #             )
+    #             
+    #             # Format user data
+    #             formatted_user = {
+    #                 'uid': uid,
+    #                 'name': user_info['name'],
+    #                 'email': user_info['email'],
+    #                 'login': user_info['login'],
+    #                 'partner_id': user_info['partner_id'][0] if user_info['partner_id'] else None,
+    #                 'company_id': user_info['company_id'][0] if user_info['company_id'] else None,
+    #                 'groups': [group['name'] for group in group_data],
+    #                 'is_helpdesk_manager': self._is_helpdesk_manager(group_data),
+    #                 'is_helpdesk_user': self._is_helpdesk_user(group_data)
+    #             }
+    #             
+    #             logger.info(f"XML-RPC authentication successful for user: {email} via {common_endpoint}")
+    #             return True, formatted_user, None
+    #             
+    #         except xmlrpc.client.Fault as e:
+    #             logger.error(f"Odoo XML-RPC error via {common_endpoint}: {e}")
+    #             last_error = f"XML-RPC service error: {e}"
+    #             continue
+    #             
+    #         except Exception as e:
+    #             logger.error(f"Connection error via {common_endpoint}: {e}")
+    #             last_error = f"Connection failed: {e}"
+    #             continue
+    #     
+    #     # All endpoints failed
+    #     return False, None, last_error
     
     def create_session(self, telegram_user_id: int, odoo_user_data: Dict[str, Any]) -> str:
         """
