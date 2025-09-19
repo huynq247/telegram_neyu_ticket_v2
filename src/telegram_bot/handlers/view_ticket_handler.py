@@ -74,12 +74,12 @@ class ViewTicketHandler:
             if update.callback_query:
                 await update.callback_query.edit_message_text(
                     message_text,
-                    parse_mode='Markdown'
+                    parse_mode='HTML'
                 )
             else:
                 await update.message.reply_text(
                     message_text,
-                    parse_mode='Markdown'
+                    parse_mode='HTML'
                 )
             return ConversationHandler.END
         

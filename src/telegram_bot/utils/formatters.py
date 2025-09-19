@@ -79,11 +79,11 @@ class BotFormatters:
     def format_help_message() -> str:
         """Format help message"""
         return (
-            "📋 *Bot Usage Guide*\n\n"
-            "🆕 */newticket* - Create new support ticket\n"
-            "📝 */mytickets* - View your ticket list\n"
-            "❓ */help* - Show this guide\n\n"
-            "💡 *How to create a ticket:*\n"
+            "📋 <b>Bot Usage Guide</b>\n\n"
+            "🆕 <b>/newticket</b> - Create new support ticket\n"
+            "📝 <b>/mytickets</b> - View your ticket list\n"
+            "❓ <b>/help</b> - Show this guide\n\n"
+            "💡 <b>How to create a ticket:</b>\n"
             "1. Type /newticket\n"
             "2. Select destination\n"
             "3. Enter problem description\n"
@@ -96,7 +96,7 @@ class BotFormatters:
     def format_destination_selection() -> str:
         """Format destination selection message"""
         return (
-            "🌍 *Select ticket destination:*\n\n"
+            "🌍 <b>Select ticket destination:</b>\n\n"
             "Please choose the country/region where you need support:"
         )
     

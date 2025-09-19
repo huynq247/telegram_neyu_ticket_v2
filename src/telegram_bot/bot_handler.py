@@ -101,7 +101,7 @@ class TelegramBotHandler:
             await update.message.reply_text(
                 welcome_message,
                 reply_markup=keyboard,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         else:
             # User needs to login
@@ -114,7 +114,7 @@ class TelegramBotHandler:
                 "💡 *Note:* You need to authenticate before creating or managing tickets."
             )
             
-            await update.message.reply_text(welcome_message, parse_mode='Markdown')
+            await update.message.reply_text(welcome_message, parse_mode='HTML')
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /help command with authentication awareness"""
@@ -155,7 +155,7 @@ class TelegramBotHandler:
                 "💡 *Note:* You need to login before accessing ticket features."
             )
         
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text, parse_mode='HTML')
     
     async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /menu command - requires authentication"""
@@ -183,7 +183,7 @@ class TelegramBotHandler:
         await update.message.reply_text(
             menu_text,
             reply_markup=keyboard,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     
     async def handle_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -205,11 +205,9 @@ class TelegramBotHandler:
         
         logger.info(f"Menu callback: {callback_data} from user {user_id}")
         
-        # Handle different menu options
+        # Handle different menu options - REMOVE menu_my_tickets to avoid conflict
         if callback_data == "menu_new_ticket":
             await self.handle_new_ticket_callback(query, context)
-        elif callback_data == "menu_my_tickets":
-            await self.handle_my_tickets_callback(query, context)
         elif callback_data == "menu_help":
             await self.handle_help_callback(query, context)
         else:
@@ -232,7 +230,7 @@ class TelegramBotHandler:
             await query.edit_message_text(
                 message,
                 reply_markup=keyboard,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             
             return WAITING_DESTINATION
@@ -240,25 +238,7 @@ class TelegramBotHandler:
             # Called from command, use original logic
             return await self.new_ticket_command(update, context)
     
-    async def handle_my_tickets_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle my tickets callback - call the same function as /mytickets command"""
-        try:
-            # Create update with callback query - copy from original update
-            fake_update = Update(
-                update_id=0, 
-                callback_query=query,
-                effective_user=query.from_user,
-                effective_chat=query.message.chat
-            )
-            
-            # Call the exact same handler as /mytickets command
-            await self.view_ticket_handler.view_tickets_command(fake_update, context)
-            
-        except Exception as e:
-            logger.error(f"Error in handle_my_tickets_callback: {e}")
-            await query.edit_message_text(
-                "❌ Error occurred while loading tickets."
-            )
+
     
     async def handle_view_tickets_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle view tickets callback from menu"""
@@ -271,7 +251,7 @@ class TelegramBotHandler:
         if not self.view_ticket_handler._is_authenticated(user_id):
             await query.edit_message_text(
                 "🔒 You need to login first. Use /login to authenticate.",
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             return ConversationHandler.END
         
@@ -299,7 +279,7 @@ class TelegramBotHandler:
             await query.edit_message_text(
                 message,
                 reply_markup=keyboard,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             
             return self.view_ticket_handler.VIEWING_LIST
@@ -341,7 +321,7 @@ class TelegramBotHandler:
                 "• /help - Show this help message"
             )
         
-        await query.edit_message_text(help_text, parse_mode='Markdown')
+        await query.edit_message_text(help_text, parse_mode='HTML')
     
     # ===============================
     # TICKET CONVERSATION HANDLERS
@@ -362,7 +342,7 @@ class TelegramBotHandler:
         await update.message.reply_text(
             message,
             reply_markup=keyboard,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         return WAITING_DESTINATION
@@ -380,7 +360,7 @@ class TelegramBotHandler:
         
         # Format and send confirmation message
         message = self.formatters.format_destination_selected(destination)
-        await query.edit_message_text(message, parse_mode='Markdown')
+        await query.edit_message_text(message, parse_mode='HTML')
         
         return WAITING_DESCRIPTION
     
@@ -405,7 +385,7 @@ class TelegramBotHandler:
         await update.message.reply_text(
             message,
             reply_markup=keyboard,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
         
         return WAITING_PRIORITY
@@ -430,7 +410,7 @@ class TelegramBotHandler:
         
         await query.edit_message_text(
             confirmation_text,
-            parse_mode='Markdown',
+            parse_mode='HTML',
             reply_markup=keyboard
         )
         
@@ -471,7 +451,7 @@ class TelegramBotHandler:
                     message = self.formatters.format_ticket_error(result.get('message', 'Unknown error'))
                     logger.error(f"Failed to create ticket for user {user_id}")
                 
-                await query.edit_message_text(message, parse_mode='Markdown')
+                await query.edit_message_text(message, parse_mode='HTML')
                 
                 # Clear user data
                 self.user_service.clear_user_data(user_id)
@@ -588,8 +568,8 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('menu', self.menu_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
         
-        # Add callback query handlers for menu buttons
-        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(help)$'))
+        # Add callback query handlers for menu buttons (excluding menu_my_tickets - handled by conversation)
+        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(new_ticket|help)$'))
         
         logger.info("Đã setup handlers cho Telegram Bot")
     
