@@ -207,16 +207,7 @@ class TelegramBotHandler:
         
         # Handle different menu options - REMOVE menu_my_tickets to avoid conflict
         if callback_data == "menu_new_ticket":
-            await self.handle_new_ticket_callback(query, context)
-        elif callback_data == "menu_help":
-            await self.handle_help_callback(query, context)
-        else:
-            await query.edit_message_text("❓ Unknown menu option.")
-    
-    async def handle_new_ticket_callback(self, update, context: ContextTypes.DEFAULT_TYPE) -> int:
-        """Handle new ticket creation from menu button"""
-        if hasattr(update, 'callback_query'):
-            query = update.callback_query
+            # For menu new ticket, we need to start the destination selection directly
             user = query.from_user
             chat_id = query.message.chat_id
             
@@ -232,11 +223,35 @@ class TelegramBotHandler:
                 reply_markup=keyboard,
                 parse_mode='HTML'
             )
-            
-            return WAITING_DESTINATION
+        elif callback_data == "menu_help":
+            await self.handle_help_callback(query, context)
+        elif callback_data == "menu_logout":
+            await self.handle_logout_callback(query, context)
         else:
-            # Called from command, use original logic
-            return await self.new_ticket_command(update, context)
+            await query.edit_message_text("❓ Unknown menu option.")
+    
+    async def handle_new_ticket_callback(self, update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle new ticket creation from menu button"""
+        # When called from conversation handler, update is Update object
+        # When called from menu callback, update is Update object with callback_query
+        query = update.callback_query
+        user = query.from_user
+        chat_id = query.message.chat_id
+        
+        # Initialize user data
+        self.user_service.init_user_data(user, chat_id)
+        
+        # Show destination selection
+        keyboard = self.keyboards.get_destination_keyboard()
+        message = self.formatters.format_destination_selection()
+        
+        await query.edit_message_text(
+            message,
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+        
+        return WAITING_DESTINATION
     
 
     
@@ -322,6 +337,67 @@ class TelegramBotHandler:
             )
         
         await query.edit_message_text(help_text, parse_mode='HTML')
+    
+    async def handle_logout_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle logout callback from menu"""
+        user = query.from_user
+        
+        # Check if user is logged in
+        is_valid, user_data = self.auth_service.validate_session(user.id)
+        
+        if not is_valid:
+            await query.edit_message_text(
+                "ℹ️ You are not currently logged in.\n"
+                "Use /login to authenticate."
+            )
+            return
+        
+        # Revoke session
+        success = self.auth_service.revoke_session(user.id)
+        
+        if success:
+            await query.edit_message_text(
+                f"✅ Successfully logged out.\n\n"
+                f"Goodbye, *{user_data['name']}*!\n\n"
+                "Use /login to authenticate again.",
+                parse_mode='HTML'
+            )
+            logger.info(f"User {user.id} ({user_data['email']}) logged out from menu")
+        else:
+            await query.edit_message_text("❌ Error during logout. Please try again.")
+    
+    async def handle_back_to_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle back to menu callback"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        
+        # Clear user data when going back to menu
+        self.user_service.clear_user_data(user_id)
+        
+        # Check authentication
+        is_valid, user_data = self.auth_service.validate_session(user_id)
+        
+        if is_valid:
+            keyboard = self.keyboards.get_main_menu_keyboard()
+            menu_text = (
+                f"🏠 *Main Menu*\n\n"
+                f"👤 Logged in as: *{user_data['name']}*\n"
+                f"📧 Email: {user_data['email']}\n\n"
+                "Choose an option below:"
+            )
+            await query.edit_message_text(
+                menu_text,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+        else:
+            await query.edit_message_text(
+                "🔐 Your session has expired. Please use /login to authenticate again."
+            )
+        
+        return ConversationHandler.END
     
     # ===============================
     # TICKET CONVERSATION HANDLERS
@@ -446,12 +522,13 @@ class TelegramBotHandler:
                 # Format response message
                 if result['success']:
                     message = self.formatters.format_ticket_success(result, user_data)
+                    keyboard = self.keyboards.get_back_to_menu_keyboard()
                     logger.info(f"Ticket created successfully for user {user_id}")
+                    await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
                 else:
                     message = self.formatters.format_ticket_error(result.get('message', 'Unknown error'))
                     logger.error(f"Failed to create ticket for user {user_id}")
-                
-                await query.edit_message_text(message, parse_mode='HTML')
+                    await query.edit_message_text(message, parse_mode='HTML')
                 
                 # Clear user data
                 self.user_service.clear_user_data(user_id)
@@ -500,7 +577,8 @@ class TelegramBotHandler:
             ],
             states={
                 WAITING_DESTINATION: [
-                    CallbackQueryHandler(self.destination_callback, pattern='^dest_')
+                    CallbackQueryHandler(self.destination_callback, pattern='^dest_'),
+                    CallbackQueryHandler(self.handle_back_to_menu_callback, pattern='^back_to_menu$')
                 ],
                 WAITING_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.description_handler)
@@ -569,7 +647,10 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
         
         # Add callback query handlers for menu buttons (excluding menu_my_tickets - handled by conversation)
-        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(new_ticket|help)$'))
+        self.application.add_handler(CallbackQueryHandler(self.handle_menu_callback, pattern='^menu_(new_ticket|help|logout)$'))
+        
+        # Add handler for back_to_menu callback
+        self.application.add_handler(CallbackQueryHandler(self.handle_back_to_menu_callback, pattern='^back_to_menu$'))
         
         logger.info("Đã setup handlers cho Telegram Bot")
     

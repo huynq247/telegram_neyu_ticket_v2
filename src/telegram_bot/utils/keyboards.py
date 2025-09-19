@@ -16,7 +16,8 @@ class BotKeyboards:
             [InlineKeyboardButton("🇮🇳 India", callback_data="dest_India")],
             [InlineKeyboardButton("🇵🇭 Philippines", callback_data="dest_Philippines")],
             [InlineKeyboardButton("🇲🇾 Malaysia", callback_data="dest_Malaysia")],
-            [InlineKeyboardButton("🇮🇩 Indonesia", callback_data="dest_Indonesia")]
+            [InlineKeyboardButton("🇮🇩 Indonesia", callback_data="dest_Indonesia")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -45,7 +46,8 @@ class BotKeyboards:
         keyboard = [
             [InlineKeyboardButton("🎫 Create New Ticket", callback_data="menu_new_ticket")],
             [InlineKeyboardButton("📋 View My Tickets", callback_data="menu_my_tickets")],
-            [InlineKeyboardButton("❓ Help", callback_data="menu_help")]
+            [InlineKeyboardButton("❓ Help", callback_data="menu_help")],
+            [InlineKeyboardButton("🚪 Log out", callback_data="menu_logout")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -172,4 +174,12 @@ class BotKeyboards:
             [InlineKeyboardButton("⬅️ Back to List", callback_data="view_back_to_list")]
         ])
         
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def get_back_to_menu_keyboard():
+        """Simple keyboard with just Back to Menu button"""
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
+        ]
         return InlineKeyboardMarkup(keyboard)
