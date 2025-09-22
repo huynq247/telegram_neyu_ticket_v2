@@ -1,0 +1,9 @@
+# Stop containers
+docker compose down
+
+# Fix logs directory permissions on host
+sudo chown -R 1000:1000 logs/
+
+# Hoặc nếu logs chưa có
+mkdir -p logs
+sudo chown -R 1000:1000 logs/

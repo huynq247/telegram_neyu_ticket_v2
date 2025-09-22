@@ -46,6 +46,25 @@ class PostgreSQLConnector:
         # Kết nối tới PostgreSQL
         self._connect()
     
+    def get_stage_name(self, stage_id: int) -> str:
+        """
+        Map stage_id to stage name
+        
+        Args:
+            stage_id: ID of the stage
+            
+        Returns:
+            Stage name string
+        """
+        stage_mapping = {
+            1: "New",
+            2: "In Progress", 
+            3: "Waiting",
+            4: "Done",
+            5: "Cancelled"
+        }
+        return stage_mapping.get(stage_id, "Unknown")
+    
     def _connect(self) -> None:
         """Kết nối với PostgreSQL server"""
         try:
@@ -663,7 +682,7 @@ class PostgreSQLConnector:
                     ht.number as tracking_id,
                     ht.create_date,
                     ht.write_date,
-                    'Open' as stage_name
+                    ht.stage_id
                 FROM helpdesk_ticket ht
                 WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
                 ORDER BY ht.create_date DESC
@@ -684,7 +703,7 @@ class PostgreSQLConnector:
                     'tracking_id': row[5],
                     'create_date': row[6],
                     'write_date': row[7],
-                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                    'stage_name': self.get_stage_name(row[8]) if row[8] else 'Unknown'
                 }
                 tickets.append(ticket_info)
             
@@ -722,7 +741,7 @@ class PostgreSQLConnector:
                     ht.number as tracking_id,
                     ht.create_date,
                     ht.write_date,
-                    'Open' as stage_name
+                    ht.stage_id
                 FROM helpdesk_ticket ht
                 WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
             """
@@ -754,7 +773,7 @@ class PostgreSQLConnector:
                     'tracking_id': row[5],
                     'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
                     'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
-                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                    'stage_name': self.get_stage_name(row[8]) if row[8] else 'Unknown'
                 }
                 tickets.append(ticket_info)
             
@@ -789,7 +808,7 @@ class PostgreSQLConnector:
                     ht.number as tracking_id,
                     ht.create_date,
                     ht.write_date,
-                    'Open' as stage_name
+                    ht.stage_id
                 FROM helpdesk_ticket ht
                 WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
                 AND (ht.name ILIKE %s OR ht.description ILIKE %s)
@@ -812,7 +831,7 @@ class PostgreSQLConnector:
                     'tracking_id': row[5],
                     'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
                     'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
-                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                    'stage_name': self.get_stage_name(row[8]) if row[8] else 'Unknown'
                 }
                 tickets.append(ticket_info)
             
@@ -866,7 +885,7 @@ class PostgreSQLConnector:
                     ht.number as tracking_id,
                     ht.create_date,
                     ht.write_date,
-                    'Open' as stage_name
+                    ht.stage_id
                 FROM (
                     SELECT * FROM helpdesk_ticket ht2
                     WHERE ht2.partner_email = %s OR ht2.partner_email ILIKE %s
@@ -891,7 +910,7 @@ class PostgreSQLConnector:
                     'tracking_id': row[5],
                     'create_date': row[6].strftime('%Y-%m-%d %H:%M') if row[6] else 'N/A',
                     'write_date': row[7].strftime('%Y-%m-%d %H:%M') if row[7] else 'N/A',
-                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else 'Unknown')
+                    'stage_name': self.get_stage_name(row[8]) if row[8] else 'Unknown'
                 }
                 tickets.append(ticket_info)
             
