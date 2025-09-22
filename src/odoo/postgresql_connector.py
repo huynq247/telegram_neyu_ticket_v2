@@ -916,6 +916,188 @@ class PostgreSQLConnector:
                 'per_page': per_page
             }
     
+    async def get_ticket_comments_by_number(self, ticket_number: str) -> List[Dict[str, Any]]:
+        """
+        Get comments for a ticket by tracking number
+        
+        Args:
+            ticket_number: Ticket tracking number (e.g., TH220925757)
+            
+        Returns:
+            List of comments
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            # First, find the ticket by tracking number
+            ticket_query = """
+                SELECT id, name 
+                FROM helpdesk_ticket 
+                WHERE number = %s
+                LIMIT 1
+            """
+            cursor.execute(ticket_query, (ticket_number,))
+            ticket = cursor.fetchone()
+            
+            if not ticket:
+                logger.info(f"No ticket found with number: {ticket_number}")
+                return []
+            
+            ticket_id = ticket[0]
+            ticket_name = ticket[1]
+            
+            # Get comments (messages) for this ticket
+            comments_query = """
+                SELECT 
+                    mm.id,
+                    mm.body,
+                    mm.create_date,
+                    mm.author_id,
+                    rp.name as author_name,
+                    mm.message_type,
+                    mm.subtype_id
+                FROM mail_message mm
+                LEFT JOIN res_partner rp ON mm.author_id = rp.id
+                WHERE mm.res_id = %s 
+                    AND mm.model = 'helpdesk.ticket'
+                    AND mm.message_type = 'comment'
+                ORDER BY mm.create_date ASC
+            """
+            
+            cursor.execute(comments_query, (ticket_id,))
+            rows = cursor.fetchall()
+            
+            comments = []
+            for row in rows:
+                comment = {
+                    'id': row[0],
+                    'body': row[1] or 'No content',
+                    'create_date': row[2].strftime('%Y-%m-%d %H:%M:%S') if row[2] else 'Unknown date',
+                    'author_id': row[3],
+                    'author_name': row[4] or 'Unknown',
+                    'message_type': row[5],
+                    'subtype_id': row[6]
+                }
+                comments.append(comment)
+            
+            cursor.close()
+            logger.info(f"Found {len(comments)} comments for ticket {ticket_number} (ID: {ticket_id})")
+            return comments
+            
+        except Exception as e:
+            logger.error(f"Error getting comments for ticket {ticket_number}: {e}")
+            return []
+
+    async def add_comment_to_ticket(self, ticket_number: str, comment_text: str, user_email: str) -> bool:
+        """
+        Add a comment to a ticket
+        
+        Args:
+            ticket_number: Ticket number (e.g., VN00026)
+            comment_text: Comment content
+            user_email: Email of user adding the comment
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # First get the ticket ID from the ticket number
+            ticket_query = """
+            SELECT id FROM helpdesk_ticket 
+            WHERE number = %s
+            """
+            
+            cursor = self.connection.cursor()
+            cursor.execute(ticket_query, (ticket_number,))
+            ticket_result = cursor.fetchone()
+            
+            if not ticket_result:
+                logger.error(f"Ticket not found: {ticket_number}")
+                return False
+            
+            ticket_id = ticket_result[0]
+            
+            # Insert comment into mail_message table
+            # This follows Odoo's structure for ticket comments
+            insert_comment_query = """
+            INSERT INTO mail_message (
+                model, res_id, body, message_type, subtype_id, 
+                author_id, email_from, create_date, write_date
+            ) VALUES (
+                'helpdesk.ticket', %s, %s, 'comment', NULL,
+                NULL, %s, NOW(), NOW()
+            )
+            """
+            
+            # Format comment as HTML (Odoo format)
+            html_comment = f'<div data-oe-version="1.2">{comment_text}</div>'
+            
+            cursor.execute(insert_comment_query, (ticket_id, html_comment, user_email))
+            self.connection.commit()
+            
+            logger.info(f"Comment added successfully to ticket {ticket_number} (ID: {ticket_id}) by {user_email}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding comment to ticket {ticket_number}: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False
+
+    def get_recent_tickets_by_email(self, user_email: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get recent tickets for a user by email
+        
+        Args:
+            user_email: User email
+            limit: Number of tickets to return
+            
+        Returns:
+            List of recent tickets with basic info
+        """
+        try:
+            cursor = self.connection.cursor()
+            
+            query = """
+            SELECT ht.id, ht.name, ht.number, 
+                   CASE 
+                       WHEN ht.stage_id = 1 THEN 'New'
+                       WHEN ht.stage_id = 2 THEN 'In Progress'
+                       WHEN ht.stage_id = 3 THEN 'Solved'
+                       WHEN ht.stage_id = 4 THEN 'Cancelled'
+                       ELSE 'Unknown'
+                   END as stage_name, 
+                   ht.create_date
+            FROM helpdesk_ticket ht
+            WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+            ORDER BY ht.create_date DESC
+            LIMIT %s
+            """
+            
+            logger.info(f"Querying recent tickets for email: {user_email}")
+            cursor.execute(query, (user_email, f"%{user_email}%", limit))
+            rows = cursor.fetchall()
+            logger.info(f"Query returned {len(rows)} rows")
+            
+            tickets = []
+            for row in rows:
+                ticket_info = {
+                    'id': row[0],
+                    'name': row[1],
+                    'tracking_id': row[2],  # This is the number field
+                    'stage_name': row[3] if row[3] else 'Unknown',
+                    'create_date': row[4].strftime('%Y-%m-%d %H:%M') if row[4] else 'Unknown'
+                }
+                tickets.append(ticket_info)
+            
+            cursor.close()
+            logger.info(f"Retrieved {len(tickets)} recent tickets for {user_email}")
+            return tickets
+            
+        except Exception as e:
+            logger.error(f"Error getting recent tickets for {user_email}: {e}")
+            return []
+
     def close(self) -> None:
         """Đóng kết nối database"""
         if self.connection:

@@ -64,43 +64,28 @@ class BotKeyboards:
         """
         keyboard = []
         
-        if has_tickets:
-            # Add detail buttons for each ticket in a compact format
-            if tickets:
-                # Group detail buttons in rows of 2 for better space usage
-                detail_buttons = []
-                for i, ticket in enumerate(tickets, 1):
-                    ticket_id = ticket.get('id')
-                    if ticket_id:
-                        detail_buttons.append(
-                            InlineKeyboardButton(f"📄 {i}", callback_data=f"view_detail_{ticket_id}")
-                        )
-                
-                # Add detail buttons in rows of 3 for compact layout
-                for i in range(0, len(detail_buttons), 3):
-                    row = detail_buttons[i:i+3]
-                    keyboard.append(row)
-                
-                # Add separator
-                keyboard.append([InlineKeyboardButton("────────────", callback_data="separator")])
+        # Search option only
+        keyboard.append([
+            InlineKeyboardButton("🔍 Search", callback_data="view_search")
+        ])
+        
+        # Comment options
+        keyboard.append([
+            InlineKeyboardButton("👁 View Comments", callback_data="view_comments")
+        ])
+        
+        # Pagination
+        if total_pages > 1:
+            pagination_row = []
+            if current_page > 1:
+                pagination_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"view_page_{current_page-1}"))
             
-            # Search option only
-            keyboard.append([
-                InlineKeyboardButton("🔍 Search", callback_data="view_search")
-            ])
+            pagination_row.append(InlineKeyboardButton(f"Page {current_page}/{total_pages}", callback_data="view_page_info"))
             
-            # Pagination
-            if total_pages > 1:
-                pagination_row = []
-                if current_page > 1:
-                    pagination_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"view_page_{current_page-1}"))
-                
-                pagination_row.append(InlineKeyboardButton(f"Page {current_page}/{total_pages}", callback_data="view_page_info"))
-                
-                if current_page < total_pages:
-                    pagination_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"view_page_{current_page+1}"))
-                
-                keyboard.append(pagination_row)
+            if current_page < total_pages:
+                pagination_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"view_page_{current_page+1}"))
+            
+            keyboard.append(pagination_row)
         
         # Back to main menu
         keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])

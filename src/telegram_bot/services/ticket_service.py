@@ -219,3 +219,91 @@ class TicketService:
                 'current_page': 1,
                 'total_pages': 0
             }
+
+    async def get_ticket_comments_by_number(self, ticket_number: str) -> List[Dict[str, Any]]:
+        """
+        Get comments for a ticket by ticket number
+        
+        Args:
+            ticket_number: Ticket tracking number (e.g., TH220925757)
+            
+        Returns:
+            List of comments
+        """
+        try:
+            # Use postgresql_connector to get comments
+            comments = await self.ticket_manager.pg_connector.get_ticket_comments_by_number(ticket_number)
+            logger.info(f"Retrieved {len(comments)} comments for ticket {ticket_number}")
+            return comments
+            
+        except Exception as e:
+            logger.error(f"Error getting comments for ticket {ticket_number}: {e}")
+            return []
+
+    async def add_comment_to_ticket(self, ticket_number: str, comment_text: str, user_id: int, auth_service) -> bool:
+        """
+        Add a comment to a ticket
+        
+        Args:
+            ticket_number: Ticket number (e.g., VN00026)
+            comment_text: Comment content
+            user_id: User ID who is adding the comment
+            auth_service: Auth service to get user info
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Get user email from auth service for author info
+            user_info = auth_service.get_user_info(user_id)
+            if not user_info or 'email' not in user_info:
+                logger.error(f"Could not get user info for user_id {user_id}")
+                return False
+            
+            user_email = user_info['email']
+            
+            # Add comment to database
+            success = await self.ticket_manager.pg_connector.add_comment_to_ticket(
+                ticket_number, comment_text, user_email
+            )
+            
+            if success:
+                logger.info(f"Comment added successfully to ticket {ticket_number} by {user_email}")
+                return True
+            else:
+                logger.error(f"Failed to add comment to ticket {ticket_number}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error adding comment to ticket {ticket_number}: {e}")
+            return False
+
+    async def get_recent_tickets(self, user_id: int, auth_service, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get recent tickets for the user
+        
+        Args:
+            user_id: Telegram user ID
+            auth_service: Auth service to get user info
+            limit: Number of tickets to return (default 10)
+            
+        Returns:
+            List of recent tickets with basic info
+        """
+        try:
+            # Get user email from auth service
+            user_info = auth_service.get_user_info(user_id)
+            if not user_info or 'email' not in user_info:
+                logger.error(f"Could not get user info for user_id {user_id}")
+                return []
+            
+            user_email = user_info['email']
+            
+            # Get recent tickets from database (sync call)
+            tickets = self.ticket_manager.pg_connector.get_recent_tickets_by_email(user_email, limit)
+            logger.info(f"Retrieved {len(tickets)} recent tickets for user {user_email}")
+            return tickets
+            
+        except Exception as e:
+            logger.error(f"Error getting recent tickets for user {user_id}: {e}")
+            return []
