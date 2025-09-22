@@ -53,9 +53,8 @@ class TelegramBotHandler:
         self.application = None
         self.running = False
         
-        # Initialize authentication service
-        odoo_url = f"http://{odoo_config['host']}:{odoo_config['port']}"
-        self.auth_service = OdooAuthService(odoo_url, odoo_config['database'])
+        # Initialize authentication service with XML-RPC URL
+        self.auth_service = OdooAuthService(odoo_config['xmlrpc_url'], odoo_config['database'])
         self.auth_handler = AuthHandler(self.auth_service)
         
         # Initialize modules

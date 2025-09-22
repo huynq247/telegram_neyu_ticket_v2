@@ -21,10 +21,13 @@ class Settings(BaseSettings):
     telegram_webhook_port: int = Field(8443, env="TELEGRAM_WEBHOOK_PORT")
     
     # Odoo settings
-    odoo_url: str = Field(..., env="ODOO_URL")
+    odoo_url: str = Field(..., env="ODOO_URL")  # Database connection (port 15432)
     odoo_db: str = Field(..., env="ODOO_DB")
-    odoo_username: str = Field(..., env="ODOO_USERNAME")
-    odoo_password: str = Field(..., env="ODOO_PASSWORD")
+    odoo_username: str = Field(..., env="ODOO_USERNAME")  # app_user for database
+    odoo_password: str = Field(..., env="ODOO_PASSWORD")  # S3cure!Pass for database
+    
+    # XML-RPC API settings (port 8069)
+    odoo_xmlrpc_url: str = Field("http://61.28.236.114:8069", env="ODOO_XMLRPC_URL")
     
     # Application settings
     app_name: str = Field("TelegramNeyu", env="APP_NAME")

@@ -86,7 +86,8 @@ class TelegramNeyuApp:
                 'port': int(settings.odoo_url.split(':')[2]) if ':' in settings.odoo_url.split('://')[1] else 8069,
                 'database': settings.odoo_db,
                 'username': settings.odoo_username,
-                'password': settings.odoo_password
+                'password': settings.odoo_password,
+                'xmlrpc_url': settings.odoo_xmlrpc_url  # Separate XML-RPC URL for authentication
             }
             
             self.telegram_handler = TelegramBotHandler(
