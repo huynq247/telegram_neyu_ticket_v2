@@ -232,48 +232,22 @@ class PostgreSQLConnector:
 
     def generate_vietnam_ticket_number(self) -> str:
         """
-        Tạo số ticket HT theo format hiện tại
+        Tạo số ticket VN theo format mới
         
         Returns:
-            Ticket number theo format HT00XXX
+            Ticket number theo format VN[DDMMYY][XXX] (VN220925001)
         """
         try:
-            cursor = self.connection.cursor()
-            
-            # Lấy HT number cao nhất
-            cursor.execute("""
-                SELECT number 
-                FROM helpdesk_ticket 
-                WHERE number LIKE 'HT%' 
-                ORDER BY CAST(SUBSTRING(number FROM 3) AS INTEGER) DESC 
-                LIMIT 1;
-            """)
-            
-            latest_record = cursor.fetchone()
-            
-            if latest_record and latest_record[0]:
-                # Extract number from "HT00012"
-                import re
-                match = re.search(r'HT(\d+)', latest_record[0])
-                if match:
-                    latest_number = int(match.group(1))
-                    next_number = latest_number + 1
-                    ticket_number = f"HT{str(next_number).zfill(5)}"
-                else:
-                    ticket_number = "HT00013"
-            else:
-                # Start from HT00001
-                ticket_number = "HT00001"
-            
-            cursor.close()
-            logger.info(f"Generated Vietnam Ticket number: {ticket_number}")
-            return ticket_number
+            # Use the new format for Vietnam tickets
+            return self.generate_ticket_number("Vietnam")
             
         except Exception as e:
             logger.error(f"Lỗi tạo Vietnam ticket number: {e}")
-            # Fallback
+            # Fallback with new format
+            from datetime import datetime
             import random
-            return f"HT{str(random.randint(13, 99)).zfill(5)}"
+            date_part = datetime.now().strftime('%d%m%y')
+            return f"VN{date_part}{str(random.randint(1, 999)).zfill(3)}"
     
     def generate_ticket_number(self, country: str, table_name: str = None) -> str:
         """
@@ -284,7 +258,7 @@ class PostgreSQLConnector:
             table_name: Tên bảng (optional, sẽ lấy từ config)
             
         Returns:
-            Ticket number theo format [COUNTRY_CODE]00XXX (VN00001, TH00001, etc.)
+            Ticket number theo format [COUNTRY_CODE][DDMMYY][XXX] (VN22092501, TH22092502, etc.)
         """
         try:
             # Load country config with fallback
@@ -308,32 +282,34 @@ class PostgreSQLConnector:
             prefix = config['prefix']
             target_table = table_name or config['table']
             
+            # Generate date part DDMMYY
+            from datetime import datetime
+            now = datetime.now()
+            date_part = now.strftime('%d%m%y')  # Format: DDMMYY (22/09/25 -> 220925)
+            
+            # Generate unique ticket number with microsecond precision to avoid collisions
+            import time
+            import random
+            
+            # Use microsecond timestamp + random number for uniqueness
+            microsecond = int(time.time() * 1000000) % 1000  # Last 3 digits of microseconds
+            random_part = random.randint(0, 99)  # Random 2 digits
+            
+            # Combine to create unique 3-digit sequence
+            unique_sequence = (microsecond + random_part) % 1000
+            if unique_sequence == 0:
+                unique_sequence = 1
+                
+            today_prefix = f"{prefix}{date_part}"
+            ticket_number = f"{today_prefix}{str(unique_sequence).zfill(3)}"
+            
+            # Fallback: if somehow still collision, add more randomness
             cursor = self.connection.cursor()
-            
-            # Lấy ticket number cao nhất cho country này
-            cursor.execute(f"""
-                SELECT number 
-                FROM {target_table}
-                WHERE number LIKE '{prefix}%' 
-                ORDER BY CAST(SUBSTRING(number FROM 3) AS INTEGER) DESC 
-                LIMIT 1;
-            """)
-            
-            latest_record = cursor.fetchone()
-            
-            if latest_record and latest_record[0]:
-                # Extract number từ "VN00012", "TH00005", etc.
-                import re
-                match = re.search(f'{prefix}(\\d+)', latest_record[0])
-                if match:
-                    latest_number = int(match.group(1))
-                    next_number = latest_number + 1
-                    ticket_number = f"{prefix}{str(next_number).zfill(5)}"
-                else:
-                    ticket_number = f"{prefix}00001"
-            else:
-                # Start from [PREFIX]00001
-                ticket_number = f"{prefix}00001"
+            cursor.execute(f"SELECT COUNT(*) FROM {target_table} WHERE number = %s", (ticket_number,))
+            if cursor.fetchone()[0] > 0:
+                # Collision detected, use random number
+                random_seq = random.randint(100, 999)
+                ticket_number = f"{today_prefix}{random_seq}"
             
             cursor.close()
             logger.info(f"Generated {country} Ticket number: {ticket_number}")
@@ -341,10 +317,12 @@ class PostgreSQLConnector:
             
         except Exception as e:
             logger.error(f"Lỗi tạo {country} ticket number: {e}")
-            # Fallback - generate random number
+            # Fallback - generate random number with new format
             import random
+            from datetime import datetime
             fallback_prefix = country[:2].upper() if len(country) >= 2 else "XX"
-            return f"{fallback_prefix}{str(random.randint(1, 999)).zfill(5)}"
+            date_part = datetime.now().strftime('%d%m%y')
+            return f"{fallback_prefix}{date_part}{str(random.randint(1, 999)).zfill(3)}"
     
     def create_ticket(self, ticket_data: Dict[str, Any], destination: str = "Vietnam") -> Dict[str, Any]:
         """
@@ -416,9 +394,13 @@ class PostgreSQLConnector:
             description_html = f'<div data-oe-version="1.2">{description_text}</div>'
             
             # Tạo data structure cho ticket
+            # Thêm email vào name template
+            user_email = ticket_data.get('email', 'unknown@email.com')
+            ticket_name_with_email = f"{config['name_template']} - {user_email}"
+            
             helpdesk_data = {
                 'number': ticket_number,  # VN00001, TH00001, etc.
-                'name': config['name_template'],  # From Telegram Vietnam, etc.
+                'name': ticket_name_with_email,  # From Telegram Vietnam - user@email.com
                 'description': description_html,
                 'priority': str(ticket_data.get('priority', '1')),
                 'stage_id': config['stage_id'],  # Stage cho destination
