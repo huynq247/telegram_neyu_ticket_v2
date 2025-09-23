@@ -216,6 +216,15 @@ class AuthHandler:
             session_token = self.auth_service.create_session(user.id, user_data)
             
             if session_token:
+                # Save telegram mapping for Smart Auto-Authentication
+                try:
+                    from ..services.telegram_mapping_service import TelegramMappingService
+                    mapping_service = TelegramMappingService()
+                    await mapping_service.save_mapping(user.id, email)
+                    logger.info(f"Saved telegram mapping for user {user.id} -> {email}")
+                except Exception as e:
+                    logger.warning(f"Failed to save telegram mapping: {e}")
+                
                 success_text = (
                     "✅ *Login Successful!*\n\n"
                     f"👤 Welcome, *{user_data['name']}*!\n"
@@ -331,10 +340,20 @@ class AuthHandler:
         # Revoke session
         success = self.auth_service.revoke_session(user.id)
         
+        # Also revoke telegram mapping for Smart Auto-Authentication
+        try:
+            from ..services.telegram_mapping_service import TelegramMappingService
+            mapping_service = TelegramMappingService()
+            await mapping_service.revoke_mapping(user.id)
+            logger.info(f"Revoked telegram mapping for user {user.id}")
+        except Exception as e:
+            logger.warning(f"Failed to revoke telegram mapping: {e}")
+        
         if success:
             await update.message.reply_text(
                 f"✅ Successfully logged out.\n\n"
                 f"Goodbye, *{user_data['name']}*!\n\n"
+                "🔒 Smart Auto-Authentication has been disabled.\n"
                 "Use /login to authenticate again.",
                 parse_mode='Markdown'
             )

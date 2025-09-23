@@ -65,6 +65,10 @@ class TelegramBotHandler:
         self.auth_service = OdooAuthService(odoo_config['xmlrpc_url'], odoo_config['database'])
         self.auth_handler = AuthHandler(self.auth_service, self.keyboards)
         
+        # Initialize smart auth handler
+        from .handlers.smart_auth_handler import SmartAuthHandler
+        self.smart_auth_handler = SmartAuthHandler(self.auth_service, self.keyboards)
+        
         # Initialize other handlers
         self.start_handler = StartHandler()
         self.ticket_service = TicketService(ticket_manager)
@@ -174,6 +178,8 @@ class TelegramBotHandler:
                 "• /mytickets - View your tickets\n\n"
                 
                 "🔐 *Account:*\n"
+                "• /me - Show your profile & Smart Auth status\n"
+                "• /profile - Detailed profile information\n"
                 "• /logout - Logout from your account\n\n"
                 
                 "ℹ️ *General:*\n"
@@ -189,7 +195,8 @@ class TelegramBotHandler:
                 
                 "🔐 *Authentication:*\n"
                 "• /login - Login with your Odoo account\n"
-                "  └ Step-by-step or quick login (`email:password`)\n\n"
+                "  └ Step-by-step or quick login (`email:password`)\n"
+                "• /me - Smart Auto-Authentication (if available)\n\n"
                 
                 "ℹ️ *General:*\n"
                 "• /help - Show this help message\n"
@@ -198,6 +205,8 @@ class TelegramBotHandler:
                 
                 "⚡ *Quick Login Tip:*\n"
                 "Use format `email:password` for faster authentication!\n\n"
+                
+                "🚀 *Smart Auth:* Use `/me` after first login for instant access!\n\n"
                 
                 "💡 *Note:* You need to login before accessing ticket features."
             )
@@ -388,6 +397,10 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('menu', self.menu_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
+        
+        # Add Smart Auto-Authentication commands
+        self.application.add_handler(CommandHandler('me', self.smart_auth_handler.handle_me_command))
+        self.application.add_handler(CommandHandler('profile', self.smart_auth_handler.handle_profile_command))
         
         # Add awaiting tickets action commands
         self.application.add_handler(CommandHandler('addcomment', self.view_ticket_handler.handle_addcomment_command))
