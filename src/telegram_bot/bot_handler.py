@@ -243,17 +243,12 @@ class TelegramBotHandler:
             reply_markup=keyboard,
             parse_mode='HTML'
         )
-    
-
-    
-
-    
-
-    
-
-    
-
-        
+    async def cancel_view(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Cancel current view operation"""
+        await update.message.reply_text(
+            "❌ Operation cancelled. Use /menu to return to main menu.",
+            parse_mode='HTML'
+        )
         return ConversationHandler.END
     
     # ===============================
@@ -340,69 +335,46 @@ class TelegramBotHandler:
             entry_points=[
                 CommandHandler('mytickets', self.view_ticket_handler.view_tickets_command),
                 CallbackQueryHandler(self.view_ticket_handler.view_tickets_command, pattern='^menu_my_tickets$'),
-                MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+                MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
             ],
             states={
                 self.view_ticket_handler.VIEWING_LIST: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^(view_page_\d+|view_page_info|view_search|view_back_to_list|back_to_menu)$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_view_comments,
-                                       pattern='^view_comments$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets,
-                                       pattern='^view_awaiting$'),
-                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
                 ],
                 self.view_ticket_handler.SEARCHING: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_search_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^view_back_to_list$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.VIEWING_DETAIL: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^view_back_to_list$'),
-                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
                 ],
                 self.view_ticket_handler.WAITING_TICKET_NUMBER: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_ticket_number_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^back_to_tickets$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.VIEWING_COMMENTS: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^(back_to_tickets|back_to_comments)$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_add_comment,
-                                       pattern='^add_comment$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.WAITING_ADD_COMMENT_TICKET: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_add_comment_ticket_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^back_to_tickets$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.WAITING_COMMENT_TEXT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_comment_text_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^(back_to_tickets|back_to_comments)$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.VIEWING_AWAITING: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_comment, 
-                                       pattern='^awaiting_comment_.*$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_done, 
-                                       pattern='^awaiting_done_.*$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets, 
-                                       pattern='^view_awaiting$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_info, 
-                                       pattern='^awaiting_info_.*$'),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
-                                       pattern='^(back_to_tickets|view_back_to_list|spacer|comment_instruction)$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ],
                 self.view_ticket_handler.WAITING_AWAITING_COMMENT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_awaiting_comment_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets, 
-                                       pattern='^view_awaiting$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
                 ]
             },
             fallbacks=[
-                CommandHandler('cancel', self.view_ticket_handler.cancel_view),
+                CommandHandler('cancel', self.cancel_view),
                 CommandHandler('menu', self.menu_command),
                 CommandHandler('start', self.start_command)
             ]
@@ -432,7 +404,7 @@ class TelegramBotHandler:
         
         # Add fallback handler for detail commands
         self.application.add_handler(
-            MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
+            MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
         )
         
         # Add callback query handlers for welcome screen help button only (start_login handled by auth conversation)
