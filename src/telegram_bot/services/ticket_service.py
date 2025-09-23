@@ -15,7 +15,7 @@ class TicketService:
     
     async def create_ticket(self, user_data: Dict[str, Any], destination: str, user_id: int = None, auth_service = None) -> Dict[str, Any]:
         """
-        Create new ticket
+        Create new ticket with user type classification
         
         Args:
             user_data: User data
@@ -31,17 +31,50 @@ class TicketService:
                 'title': f"Ticket từ Telegram - {user_data['username']}",
                 'description': user_data['description'],
                 'telegram_chat_id': str(user_data['chat_id']),
-                'telegram_username': user_data.get('username', ''),  # Thêm telegram_username
-                'priority': user_data['priority']  # Already integer
+                'telegram_username': user_data.get('username', ''),
+                'priority': user_data['priority']
             }
             
-            # Thêm email nếu user đã authenticated
+            # Add user authentication info if available
+            user_type = None
+            auth_method = None
+            
             if user_id and auth_service:
                 user_info = auth_service.get_user_info(user_id)
                 if user_info and 'email' in user_info:
                     ticket_data['partner_email'] = user_info['email']
                     ticket_data['partner_name'] = user_info.get('name', 'Telegram User')
-                    logger.info(f"Adding email {user_info['email']} to ticket")
+                    
+                    # Extract user type and auth method
+                    user_type = user_info.get('user_type', 'portal_user')
+                    auth_method = user_info.get('auth_method', 'unknown')
+                    
+                    logger.info(f"Adding email {user_info['email']} to ticket with user_type={user_type}, auth_method={auth_method}")
+            
+            # Add user classification for database tracking
+            ticket_data['user_type'] = user_type or 'unauthenticated'
+            ticket_data['auth_method'] = auth_method or 'none'
+            ticket_data['created_via'] = 'telegram_bot'
+            
+            # Different handling based on user type
+            if user_type == 'portal_user':
+                # Portal users get special treatment
+                ticket_data['source'] = 'telegram_portal_user'
+                ticket_data['auto_assign'] = False  # Don't auto-assign portal user tickets
+                ticket_data['requires_approval'] = True  # Portal user tickets need approval
+                logger.info(f"Creating portal user ticket with special handling")
+            elif user_type == 'admin_helpdesk':
+                # Admin/helpdesk users get normal treatment
+                ticket_data['source'] = 'telegram_admin'
+                ticket_data['auto_assign'] = True
+                ticket_data['requires_approval'] = False
+                logger.info(f"Creating admin/helpdesk user ticket with normal handling")
+            else:
+                # Unauthenticated users
+                ticket_data['source'] = 'telegram_anonymous'
+                ticket_data['auto_assign'] = True
+                ticket_data['requires_approval'] = False
+                logger.info(f"Creating unauthenticated user ticket")
             
             logger.info(f"Creating ticket with data: {ticket_data} for destination: {destination}")
             result = await self.ticket_manager.create_ticket(ticket_data, destination)
@@ -308,3 +341,52 @@ class TicketService:
         except Exception as e:
             logger.error(f"Error getting recent tickets for user {user_id}: {e}")
             return []
+
+    async def update_ticket_status(self, ticket_number: str, new_status: str) -> bool:
+        """
+        Update ticket status
+        
+        Args:
+            ticket_number: Ticket number (e.g., TH230925353)
+            new_status: New status to set
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info(f"Updating ticket {ticket_number} to status {new_status}")
+            
+            # Use ticket manager to update status
+            success = await self.ticket_manager.pg_connector.update_ticket_status(
+                ticket_number,
+                new_status
+            )
+            
+            if success:
+                logger.info(f"Successfully updated ticket {ticket_number} to status {new_status}")
+            else:
+                logger.error(f"Failed to update ticket {ticket_number} to status {new_status}")
+                
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error updating ticket status for {ticket_number}: {e}")
+            return False
+
+    async def add_comment(self, ticket_number: str, user_id: int, comment_text: str) -> bool:
+        """
+        Add comment to ticket (wrapper for existing method)
+        
+        Args:
+            ticket_number: Ticket number
+            user_id: Telegram user ID
+            comment_text: Comment text
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            return await self.add_comment_to_ticket(ticket_number, comment_text, user_id, self.auth_service)
+        except Exception as e:
+            logger.error(f"Error in add_comment wrapper: {e}")
+            return False

@@ -18,6 +18,9 @@ from telegram.ext import (
     filters
 )
 
+# Import for better request handling
+from telegram.request import HTTPXRequest
+
 # Import các modules
 from .handlers.start_handler import StartHandler
 from .handlers.view_ticket_handler import ViewTicketHandler
@@ -53,17 +56,19 @@ class TelegramBotHandler:
         self.application = None
         self.running = False
         
-        # Initialize authentication service with XML-RPC URL
-        self.auth_service = OdooAuthService(odoo_config['xmlrpc_url'], odoo_config['database'])
-        self.auth_handler = AuthHandler(self.auth_service)
-        
-        # Initialize modules
-        self.start_handler = StartHandler()
-        self.ticket_service = TicketService(ticket_manager)
-        self.user_service = UserService()
+        # Initialize modules first
         self.keyboards = BotKeyboards()
         self.formatters = BotFormatters()
         self.validators = BotValidators()
+        
+        # Initialize authentication service with XML-RPC URL
+        self.auth_service = OdooAuthService(odoo_config['xmlrpc_url'], odoo_config['database'])
+        self.auth_handler = AuthHandler(self.auth_service, self.keyboards)
+        
+        # Initialize other handlers
+        self.start_handler = StartHandler()
+        self.ticket_service = TicketService(ticket_manager)
+        self.user_service = UserService()
         
         # Initialize view ticket handler
         self.view_ticket_handler = ViewTicketHandler(
@@ -95,11 +100,26 @@ class TelegramBotHandler:
     # ===============================
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command with authentication awareness"""
+        """Handle /start command with authentication awareness and deep links"""
         user = update.effective_user
         user_id = user.id
         
         logger.info(f"User {user.username} ({user_id}) started the bot")
+        
+        # Check for deep link parameters
+        if context.args and len(context.args) > 0:
+            deep_link_param = context.args[0]
+            logger.info(f"Deep link parameter: {deep_link_param}")
+            
+            # Handle deep link actions
+            if deep_link_param.startswith('addcomment_'):
+                ticket_number = deep_link_param.replace('addcomment_', '')
+                await self.view_ticket_handler.handle_addcomment_direct(update, context, ticket_number)
+                return
+            elif deep_link_param.startswith('markdone_'):
+                ticket_number = deep_link_param.replace('markdone_', '')
+                await self.view_ticket_handler.handle_markdone_direct(update, context, ticket_number)
+                return
         
         # Check if user is authenticated
         is_valid, user_data = self.auth_service.validate_session(user_id)
@@ -200,10 +220,21 @@ class TelegramBotHandler:
         # Show authenticated menu
         keyboard = self.keyboards.get_main_menu_keyboard()
         
+        # Add user type info to menu
+        user_type = user_data.get('user_type', 'unknown')
+        type_display = ""
+        if user_type == 'admin_helpdesk':
+            type_display = "🔧 Admin/Internal User"
+        elif user_type == 'portal_user':
+            type_display = "🌐 Portal User"
+        else:
+            type_display = "👤 User"
+        
         menu_text = (
             f"🏠 *Main Menu*\n\n"
             f"👤 Logged in as: *{user_data['name']}*\n"
-            f"📧 Email: {user_data['email']}\n\n"
+            f"📧 Email: {user_data['email']}\n"
+            f"🔑 Type: *{type_display}*\n\n"
             "Choose an option below:"
         )
         
@@ -317,6 +348,8 @@ class TelegramBotHandler:
                                        pattern='^(view_page_\d+|view_page_info|view_search|view_back_to_list|back_to_menu)$'),
                     CallbackQueryHandler(self.view_ticket_handler.handle_view_comments,
                                        pattern='^view_comments$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets,
+                                       pattern='^view_awaiting$'),
                     MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.handle_ticket_detail_command)
                 ],
                 self.view_ticket_handler.SEARCHING: [
@@ -349,6 +382,23 @@ class TelegramBotHandler:
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_comment_text_input),
                     CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
                                        pattern='^(back_to_tickets|back_to_comments)$'),
+                ],
+                self.view_ticket_handler.VIEWING_AWAITING: [
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_comment, 
+                                       pattern='^awaiting_comment_.*$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_done, 
+                                       pattern='^awaiting_done_.*$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets, 
+                                       pattern='^view_awaiting$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_info, 
+                                       pattern='^awaiting_info_.*$'),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_ticket_list_callback, 
+                                       pattern='^(back_to_tickets|view_back_to_list|spacer|comment_instruction)$'),
+                ],
+                self.view_ticket_handler.WAITING_AWAITING_COMMENT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_awaiting_comment_input),
+                    CallbackQueryHandler(self.view_ticket_handler.handle_awaiting_tickets, 
+                                       pattern='^view_awaiting$'),
                 ]
             },
             fallbacks=[
@@ -367,8 +417,18 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('menu', self.menu_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
         
-        # Add "hi" message handler - works like /start
+        # Add awaiting tickets action commands
+        self.application.add_handler(CommandHandler('addcomment', self.view_ticket_handler.handle_addcomment_command))
+        self.application.add_handler(CommandHandler('markdone', self.view_ticket_handler.handle_markdone_command))
+        
+        # Add "hi" message handler - works like /start (MUST be before global comment handler)
         self.application.add_handler(MessageHandler(filters.Regex(r'^(hi|Hi|HI|hello|Hello|HELLO|xin chào|chào)$'), self.start_command))
+        
+        # Add global handler for comment input (outside conversation)
+        self.application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.view_ticket_handler.handle_global_comment_input
+        ))
         
         # Add fallback handler for detail commands
         self.application.add_handler(
@@ -387,25 +447,45 @@ class TelegramBotHandler:
         logger.info("Đã setup handlers cho Telegram Bot")
     
     async def initialize(self) -> None:
-        """Khởi tạo bot"""
-        self.application = Application.builder().token(self.token).build()
-        self.setup_handlers()
-        logger.info("Telegram Bot đã được khởi tạo")
+        """Khởi tạo bot với improved request settings"""
+        try:
+            logger.info("Initializing Telegram Bot with improved settings...")
+            
+            # Create HTTPXRequest with better timeout settings
+            from telegram.request import HTTPXRequest
+            request = HTTPXRequest(
+                connection_pool_size=8,
+                connect_timeout=30,
+                read_timeout=30,
+            )
+            
+            self.application = Application.builder().token(self.token).request(request).build()
+            self.setup_handlers()
+            logger.info("✅ Telegram Bot đã được khởi tạo thành công")
+        except Exception as e:
+            logger.error(f"❌ Lỗi khởi tạo bot: {e}")
+            raise
     
     async def start_polling(self) -> None:
-        """Bắt đầu polling - Manual lifecycle management"""
+        """Bắt đầu polling với error handling"""
         if not self.application:
             await self.initialize()
         
-        logger.info("Bắt đầu Telegram Bot polling...")
+        logger.info("🚀 Bắt đầu Telegram Bot polling...")
         
         try:
             self.running = True
             
-            # Manual lifecycle management to avoid event loop conflicts
+            # Use standard polling with better error handling
             async with self.application:
                 await self.application.start()
-                await self.application.updater.start_polling(drop_pending_updates=True)
+                await self.application.updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=[
+                        "message", "callback_query", "inline_query", 
+                        "chosen_inline_result", "my_chat_member", "chat_member"
+                    ]
+                )
                 
                 # Keep running until stopped
                 while self.running:

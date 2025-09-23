@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     telegram_webhook_url: Optional[str] = Field(None, env="TELEGRAM_WEBHOOK_URL")
     telegram_webhook_port: int = Field(8443, env="TELEGRAM_WEBHOOK_PORT")
     
+    # Network/Proxy settings
+    proxy_url: Optional[str] = Field(None, env="PROXY_URL")  # Format: http://user:pass@host:port
+    connection_timeout: int = Field(30, env="CONNECTION_TIMEOUT")  # seconds
+    read_timeout: int = Field(30, env="READ_TIMEOUT")  # seconds
+    connection_retry_count: int = Field(3, env="CONNECTION_RETRY_COUNT")
+    retry_delay: int = Field(5, env="RETRY_DELAY")  # seconds
+    
     # Odoo settings
     odoo_url: str = Field(..., env="ODOO_URL")  # Database connection (port 15432)
     odoo_db: str = Field(..., env="ODOO_DB")

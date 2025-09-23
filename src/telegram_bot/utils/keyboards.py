@@ -64,9 +64,10 @@ class BotKeyboards:
         """
         keyboard = []
         
-        # Search option only
+        # Main options
         keyboard.append([
-            InlineKeyboardButton("🔍 Search", callback_data="view_search")
+            InlineKeyboardButton("🔍 Search", callback_data="view_search"),
+            InlineKeyboardButton("⏳ Awaiting Tickets", callback_data="view_awaiting")
         ])
         
         # Comment options
@@ -89,6 +90,80 @@ class BotKeyboards:
         
         # Back to main menu
         keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
+        
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def get_awaiting_tickets_keyboard(tickets: list = None):
+        """
+        Keyboard for awaiting tickets view with detailed action buttons
+        
+        Args:
+            tickets: List of awaiting tickets to create action buttons for
+        """
+        keyboard = []
+        done_buttons = []
+        comment_buttons = []
+        
+        if tickets:
+            for ticket in tickets:
+                ticket_number = ticket.get('tracking_id', ticket.get('number', 'N/A'))
+                status = ticket.get('stage_name', 'Unknown')
+                
+                # Format date safely
+                create_date = ticket.get('create_date')
+                if create_date:
+                    try:
+                        from datetime import datetime
+                        if isinstance(create_date, str):
+                            if len(create_date) >= 10:
+                                date = create_date[:10]
+                            else:
+                                date = str(create_date)
+                        elif hasattr(create_date, 'strftime'):
+                            date = create_date.strftime('%Y-%m-%d')
+                        else:
+                            date = str(create_date)
+                    except:
+                        date = 'N/A'
+                else:
+                    date = 'N/A'
+                    
+                assignee = ticket.get('user_name', 'Unassigned')
+                
+                # Group buttons by function with clear sections
+                short_status = status[:12] if len(status) > 12 else status
+                short_assignee = assignee[:12] if len(assignee) > 12 else assignee
+                
+                # Mark Done button - simplified with only essential info
+                done_text = f"✅ Mark Done | {ticket_number} | {short_status}"
+                done_buttons.append(InlineKeyboardButton(done_text, callback_data=f"awaiting_done_{ticket_number}"))
+                
+                # Add Comment button with ticket info
+                comment_text = f"💬 Add Comment\n📋 {ticket_number} | 📊 {short_status}"
+                comment_buttons.append(InlineKeyboardButton(comment_text, callback_data=f"awaiting_comment_{ticket_number}"))
+            
+            # Add grouped buttons without header buttons
+            if done_buttons:
+                # Add all done buttons
+                for btn in done_buttons:
+                    keyboard.append([btn])
+            
+            # Add spacing and instruction before comment buttons
+            if done_buttons and comment_buttons:
+                keyboard.append([InlineKeyboardButton("───────────────", callback_data="spacer")])
+                # Add instruction text for comment section
+                keyboard.append([InlineKeyboardButton("💭 If issues remain, add comments before closing:", callback_data="comment_instruction")])
+            
+            if comment_buttons:
+                # Add all comment buttons
+                for btn in comment_buttons:
+                    keyboard.append([btn])
+        
+        # Navigation button
+        keyboard.append([
+            InlineKeyboardButton("🔙 Back to List", callback_data="view_back_to_list")
+        ])
         
         return InlineKeyboardMarkup(keyboard)
     
@@ -191,6 +266,22 @@ class BotKeyboards:
         keyboard = [
             [InlineKeyboardButton("🔐 Login", callback_data="start_login")],
             [InlineKeyboardButton("❓ Help", callback_data="show_help")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def get_back_to_awaiting_keyboard():
+        """Keyboard to go back to awaiting tickets view"""
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Awaiting", callback_data="view_awaiting")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def get_back_to_tickets_keyboard():
+        """Keyboard to go back to tickets list"""
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Tickets", callback_data="view_back_to_list")]
         ]
         return InlineKeyboardMarkup(keyboard)
     

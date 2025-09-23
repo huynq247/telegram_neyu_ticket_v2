@@ -422,13 +422,97 @@ class PostgreSQLConnector:
                 'sequence': 10
             }
             
-            # Thêm thông tin partner nếu có
-            if 'partner_email' in ticket_data:
-                helpdesk_data['partner_email'] = ticket_data['partner_email']
-                logger.info(f"Adding partner_email: {ticket_data['partner_email']}")
+            # Add user type tracking fields if available
+            user_type = ticket_data.get('user_type')
+            auth_method = ticket_data.get('auth_method')
+            source = ticket_data.get('source')
             
-            if 'partner_name' in ticket_data:
-                helpdesk_data['partner_name'] = ticket_data['partner_name']
+            if user_type:
+                # Store user type information in description or additional_info field
+                additional_info = {
+                    'user_type': user_type,
+                    'auth_method': auth_method,
+                    'source': source,
+                    'created_via': ticket_data.get('created_via', 'telegram_bot'),
+                    'requires_approval': ticket_data.get('requires_approval', False),
+                    'auto_assign': ticket_data.get('auto_assign', True)
+                }
+                
+                # Try to add to additional_info field if it exists, otherwise add to description
+                try:
+                    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'helpdesk_ticket' AND column_name = 'additional_info'")
+                    if cursor.fetchone():
+                        import json
+                        helpdesk_data['additional_info'] = json.dumps(additional_info)
+                    else:
+                        # Append to description if no additional_info field
+                        user_type_info = f"<!-- User Type: {user_type}, Auth: {auth_method}, Source: {source} -->"
+                        helpdesk_data['description'] = description_html + user_type_info
+                except Exception as e:
+                    logger.warning(f"Could not check additional_info field: {e}")
+                    # Fallback: append to description
+                    user_type_info = f"<!-- User Type: {user_type}, Auth: {auth_method}, Source: {source} -->"
+                    helpdesk_data['description'] = description_html + user_type_info
+                
+                logger.info(f"Added user type tracking: {user_type} via {auth_method} from {source}")
+                
+                # Handle portal user special requirements
+                if user_type == 'portal_user':
+                    # Portal users might need different stage or special handling
+                    if ticket_data.get('requires_approval'):
+                        # Set to a "pending approval" stage if it exists
+                        # For now, keep default stage but log the requirement
+                        logger.info(f"Portal user ticket {ticket_number} requires approval")
+                    
+                    if not ticket_data.get('auto_assign', True):
+                        # Don't auto-assign to any user - keep user_id as None
+                        logger.info(f"Portal user ticket {ticket_number} will not be auto-assigned")
+            
+            # Handle partner/contact information with special processing for portal users
+            partner_email = ticket_data.get('partner_email')
+            partner_name = ticket_data.get('partner_name')
+            user_type = ticket_data.get('user_type')
+            
+            if partner_email:
+                helpdesk_data['partner_email'] = partner_email
+                logger.info(f"Adding partner_email: {partner_email}")
+                
+                # For portal users, automatically link to existing partner or create contact reference
+                if user_type == 'portal_user':
+                    logger.info(f"Processing portal user contact linking for {partner_email}")
+                    
+                    # Find existing partner by email
+                    cursor.execute("""
+                        SELECT id, name FROM res_partner 
+                        WHERE email = %s AND active = true
+                    """, (partner_email,))
+                    
+                    existing_partner = cursor.fetchone()
+                    if existing_partner:
+                        partner_id, partner_full_name = existing_partner
+                        
+                        # Link to existing partner (like ticket TH230925353)
+                        helpdesk_data['partner_id'] = partner_id
+                        helpdesk_data['commercial_partner_id'] = partner_id
+                        helpdesk_data['partner_name'] = partner_name or partner_full_name
+                        
+                        logger.info(f"Portal user ticket linked to existing partner ID {partner_id} ({partner_full_name})")
+                    else:
+                        # Partner doesn't exist - still set email/name for reference
+                        helpdesk_data['partner_name'] = partner_name or partner_email
+                        logger.info(f"Portal user ticket created with email reference (no existing partner found)")
+                        
+                        # Note: In production, you might want to create a new partner here
+                        # or handle this case differently based on business rules
+                else:
+                    # For admin/helpdesk users, just set the email/name without auto-linking
+                    if partner_name:
+                        helpdesk_data['partner_name'] = partner_name
+                        logger.info(f"Admin user ticket with contact info: {partner_email}")
+            
+            elif user_type == 'portal_user':
+                # Portal user but no email provided - this shouldn't happen but handle gracefully
+                logger.warning(f"Portal user ticket created without partner email - this may indicate an authentication issue")
             
             # Tạo INSERT query cho table của destination
             table_name = config['table']
@@ -1104,6 +1188,84 @@ class PostgreSQLConnector:
         except Exception as e:
             logger.error(f"Error getting recent tickets for {user_email}: {e}")
             return []
+
+    async def update_ticket_status(self, ticket_number: str, new_status: str) -> bool:
+        """
+        Update ticket status by ticket number
+        
+        Args:
+            ticket_number: Ticket number (e.g., TH230925353)
+            new_status: New status to set
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.connection:
+                logger.error("No database connection available")
+                return False
+            
+            cursor = self.connection.cursor()
+            
+            # Map status names to stage_id using existing stage mapping
+            stage_mapping = {
+                1: "New",
+                2: "In Progress", 
+                3: "Waiting",
+                4: "Done",
+                5: "Cancelled"
+            }
+            
+            # Reverse mapping: stage name -> stage_id
+            reverse_mapping = {v.lower(): k for k, v in stage_mapping.items()}
+            
+            # Common status mappings
+            status_mappings = {
+                'resolved': 'done',
+                'closed': 'done', 
+                'completed': 'done',
+                'finished': 'done',
+                'solved': 'done',
+                'new': 'new',
+                'in progress': 'in progress',
+                'waiting': 'waiting',
+                'cancelled': 'cancelled'
+            }
+            
+            # Get the normalized status
+            normalized_status = status_mappings.get(new_status.lower(), new_status.lower())
+            stage_id = reverse_mapping.get(normalized_status)
+            
+            if not stage_id:
+                logger.error(f"Stage not found for status: {new_status} (normalized: {normalized_status})")
+                cursor.close()
+                return False
+            
+            # Update ticket status
+            update_query = """
+                UPDATE helpdesk_ticket 
+                SET stage_id = %s
+                WHERE number = %s OR name LIKE %s
+            """
+            
+            cursor.execute(update_query, (stage_id, ticket_number, f'%{ticket_number}%'))
+            rows_affected = cursor.rowcount
+            
+            if rows_affected > 0:
+                self.connection.commit()
+                logger.info(f"Successfully updated {rows_affected} ticket(s) with number {ticket_number} to status {new_status}")
+                cursor.close()
+                return True
+            else:
+                logger.warning(f"No tickets found with number {ticket_number}")
+                cursor.close()
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating ticket status for {ticket_number}: {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False
 
     def close(self) -> None:
         """Đóng kết nối database"""

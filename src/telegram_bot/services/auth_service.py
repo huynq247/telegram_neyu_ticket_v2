@@ -3,10 +3,17 @@ Odoo Authentication Service Module
 Handle user authentication with Odoo and session management
 """
 import logging
+import os
 import secrets
 import xmlrpc.client
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, Any
+from enum import Enum
+
+class UserType(Enum):
+    """User type classification based on authentication method and permissions"""
+    ADMIN_HELPDESK = "admin_helpdesk"  # XML-RPC authenticated with admin/helpdesk permissions
+    PORTAL_USER = "portal_user"        # Web portal authenticated users
 
 logger = logging.getLogger(__name__)
 
@@ -34,28 +41,46 @@ class OdooAuthService:
         # Session storage (in production, use Redis or database)
         self.active_sessions = {}
         
-    def authenticate_user(self, email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+    async def authenticate_user(self, email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
         """
-        Authenticate user with Odoo credentials
+        Authenticate user with Odoo credentials and classify user type
         
         Args:
             email: User's Odoo email
             password: User's Odoo password
             
         Returns:
-            (success, user_data, error_message)
+            (success, user_data_with_type, error_message)
         """
         try:
             logger.info(f"Attempting authentication for user: {email}")
             
-            # XML-RPC authentication with Odoo
+            # Try XML-RPC authentication first (for admin/helpdesk users)
             success, user_data, error = self._try_xmlrpc_auth(email, password)
             if success:
-                logger.info(f"XML-RPC authentication successful for {email}")
+                # Add user type classification for XML-RPC users
+                user_data['user_type'] = UserType.ADMIN_HELPDESK.value
+                user_data['auth_method'] = 'xml-rpc'
+                user_data['auth_timestamp'] = datetime.now().isoformat()
+                
+                logger.info(f"XML-RPC authentication successful for {email} - classified as ADMIN_HELPDESK")
                 return success, user_data, error
             else:
                 logger.warning(f"XML-RPC authentication failed for {email}: {error}")
-                return False, None, error or "Invalid email or password"
+                
+                # Fallback: Try web portal authentication (for portal users)
+                portal_success, portal_user_data, portal_error = await self._try_web_portal_auth(email, password)
+                if portal_success:
+                    # Add user type classification for portal users
+                    portal_user_data['user_type'] = UserType.PORTAL_USER.value
+                    portal_user_data['auth_method'] = 'web-portal'
+                    portal_user_data['auth_timestamp'] = datetime.now().isoformat()
+                    
+                    logger.info(f"Web portal authentication successful for {email} - classified as PORTAL_USER")
+                    return portal_success, portal_user_data, portal_error
+                else:
+                    logger.warning(f"All authentication methods failed for {email}")
+                    return False, None, error or "Invalid email or password"
             
             # COMMENTED OUT - Fallback authentication no longer needed
             # fallback_users = self._get_fallback_users()
@@ -211,6 +236,198 @@ class OdooAuthService:
         
         # All endpoints failed
         return False, None, last_error
+    
+    def get_user_type_from_data(self, user_data: Dict[str, Any]) -> UserType:
+        """
+        Get user type from user data
+        
+        Args:
+            user_data: User data from authentication
+            
+        Returns:
+            UserType enum value
+        """
+        user_type_str = user_data.get('user_type', UserType.PORTAL_USER.value)
+        try:
+            return UserType(user_type_str)
+        except ValueError:
+            return UserType.PORTAL_USER
+    
+    def is_admin_helpdesk_user(self, user_data: Dict[str, Any]) -> bool:
+        """
+        Check if user is admin or helpdesk user (XML-RPC authenticated)
+        
+        Args:
+            user_data: User data from authentication
+            
+        Returns:
+            True if admin/helpdesk user, False otherwise
+        """
+        return self.get_user_type_from_data(user_data) == UserType.ADMIN_HELPDESK
+    
+    def is_portal_user(self, user_data: Dict[str, Any]) -> bool:
+        """
+        Check if user is portal user (web portal authenticated)
+        
+        Args:
+            user_data: User data from authentication
+            
+        Returns:
+            True if portal user, False otherwise
+        """
+        return self.get_user_type_from_data(user_data) == UserType.PORTAL_USER
+    
+    async def _try_web_portal_auth(self, email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Try web portal authentication using Odoo web login endpoint
+        
+        Args:
+            email: User's email
+            password: User's password
+            
+        Returns:
+            (success, user_data, error_message)
+        """
+        try:
+            import asyncio
+            import json
+            import urllib.request
+            import urllib.parse
+            import urllib.error
+            
+            logger.info(f"Attempting web portal authentication for user: {email}")
+            
+            # Get Odoo URL from config
+            odoo_web_url = os.getenv('ODOO_XMLRPC_URL', 'http://61.28.236.114:8069')
+            
+            # Use asyncio to run sync request in thread pool
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, self._sync_web_portal_request, odoo_web_url, email, password
+            )
+            
+            if result['success']:
+                user_data = {
+                    'uid': result['uid'],
+                    'name': result.get('name', email.split('@')[0].title()),
+                    'email': email,
+                    'login': email,
+                    'partner_id': result.get('partner_id'),
+                    'company_id': result.get('company_id', 1),
+                    'groups': result.get('groups', []),
+                    'is_helpdesk_manager': self._check_helpdesk_manager_from_groups(result.get('groups', [])),
+                    'is_helpdesk_user': self._check_helpdesk_user_from_groups(result.get('groups', []))
+                }
+                
+                logger.info(f"Web portal authentication successful for user: {email}")
+                return True, user_data, None
+            else:
+                logger.warning(f"Web portal authentication failed for {email}: {result.get('error')}")
+                return False, None, result.get('error', 'Web portal authentication failed')
+        except Exception as e:
+            logger.error(f"Web portal authentication error for {email}: {e}")
+            return False, None, f"Web portal authentication failed: {e}"
+    
+    def _sync_web_portal_request(self, odoo_web_url: str, email: str, password: str) -> Dict[str, Any]:
+        """
+        Synchronous web portal authentication request
+        """
+        try:
+            import json
+            import urllib.request
+            import urllib.parse
+            import urllib.error
+            
+            # Try different approaches
+            approaches = [
+                {
+                    'endpoint': f"{odoo_web_url}/web/session/authenticate",
+                    'data': {
+                        'jsonrpc': '2.0',
+                        'method': 'call',
+                        'params': {
+                            'db': self.odoo_db,
+                            'login': email,
+                            'password': password
+                        },
+                        'id': 1
+                    }
+                },
+                {
+                    'endpoint': f"{odoo_web_url}/jsonrpc",
+                    'data': {
+                        'jsonrpc': '2.0',
+                        'method': 'call',
+                        'params': {
+                            'service': 'common',
+                            'method': 'authenticate',
+                            'args': [self.odoo_db, email, password, {}]
+                        },
+                        'id': 1
+                    }
+                }
+            ]
+            
+            for i, approach in enumerate(approaches):
+                try:
+                    endpoint = approach['endpoint']
+                    login_data = approach['data']
+                    
+                    # Convert to JSON
+                    json_data = json.dumps(login_data).encode('utf-8')
+                    
+                    # Create request
+                    req = urllib.request.Request(
+                        endpoint,
+                        data=json_data,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'Content-Length': len(json_data)
+                        }
+                    )
+                    
+                    # Make request
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        if response.status == 200:
+                            response_text = response.read().decode('utf-8')
+                            result = json.loads(response_text)
+                            
+                            # Check if authentication successful
+                            if result.get('result') and isinstance(result['result'], int) and result['result'] > 0:
+                                uid = result['result']
+                                
+                                # Get user info (simplified)
+                                logger.info(f"Web portal authentication successful for user: {email} via {endpoint}")
+                                return {
+                                    'success': True,
+                                    'uid': uid,
+                                    'name': email.split('@')[0].title(),
+                                    'partner_id': None,
+                                    'company_id': 1,
+                                    'groups': ['Portal User']  # Default for portal users
+                                }
+                        
+                except urllib.error.URLError as e:
+                    logger.error(f"Web portal connection error via {endpoint}: {e}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Web portal request error via {endpoint}: {e}")
+                    continue
+            
+            return {'success': False, 'error': 'All web portal endpoints failed'}
+            
+        except Exception as e:
+            logger.error(f"Sync web portal request error: {e}")
+            return {'success': False, 'error': f'Request failed: {e}'}
+    
+    def _check_helpdesk_manager_from_groups(self, groups: list) -> bool:
+        """Check if user is helpdesk manager from group names"""
+        helpdesk_manager_groups = ['Help Desk Manager', 'Helpdesk Manager', 'Support Manager']
+        return any(group in helpdesk_manager_groups for group in groups if group)
+    
+    def _check_helpdesk_user_from_groups(self, groups: list) -> bool:
+        """Check if user is helpdesk user from group names"""  
+        helpdesk_user_groups = ['Help Desk User', 'Helpdesk User', 'Support User', 'Support Team']
+        return any(group in helpdesk_user_groups for group in groups if group)
     
     def create_session(self, telegram_user_id: int, odoo_user_data: Dict[str, Any]) -> str:
         """

@@ -17,14 +17,16 @@ logger = logging.getLogger(__name__)
 class AuthHandler:
     """Class to handle authentication conversation flow"""
     
-    def __init__(self, auth_service: OdooAuthService):
+    def __init__(self, auth_service: OdooAuthService, keyboards=None):
         """
         Initialize Authentication Handler
         
         Args:
             auth_service: OdooAuthService instance
+            keyboards: BotKeyboards instance for menu display
         """
         self.auth_service = auth_service
+        self.keyboards = keyboards
         self.formatters = BotFormatters()
         
         # Temporary storage for login process
@@ -43,10 +45,21 @@ class AuthHandler:
         is_valid, user_data = self.auth_service.validate_session(user.id)
         
         if is_valid:
+            # Add user type info for already logged in users
+            user_type = user_data.get('user_type', 'unknown')
+            type_display = ""
+            if user_type == 'admin_helpdesk':
+                type_display = "🔧 *Admin/Internal User*"
+            elif user_type == 'portal_user':
+                type_display = "🌐 *Portal User*"
+            else:
+                type_display = "👤 *User*"
+            
             message_text = (
                 f"✅ You are already logged in as *{user_data['name']}*\n"
-                f"📧 Email: {user_data['email']}\n\n"
-                "Use /logout to logout or /menu to access features."
+                f"📧 Email: {user_data['email']}\n"
+                f"{type_display}\n\n"
+                "🎯 Here's your main menu:"
             )
             
             # Handle both callback query and regular message
@@ -60,6 +73,43 @@ class AuthHandler:
                     message_text,
                     parse_mode='Markdown'
                 )
+            
+            # Show the menu for already authenticated users
+            if self.keyboards:
+                keyboard = self.keyboards.get_main_menu_keyboard()
+                
+                # Add user type info to menu
+                user_type = user_data.get('user_type', 'unknown')
+                type_display = ""
+                if user_type == 'admin_helpdesk':
+                    type_display = "🔧 Admin/Internal User"
+                elif user_type == 'portal_user':
+                    type_display = "🌐 Portal User"
+                else:
+                    type_display = "👤 User"
+                
+                menu_text = (
+                    f"🏠 <b>Main Menu</b>\n\n"
+                    f"👤 Logged in as: <b>{user_data['name']}</b>\n"
+                    f"📧 Email: {user_data['email']}\n"
+                    f"🔑 Type: <b>{type_display}</b>\n\n"
+                    "Choose an option below:"
+                )
+                
+                if update.callback_query:
+                    # For callback queries, send a new message
+                    await update.callback_query.message.reply_text(
+                        menu_text,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+                else:
+                    await update.message.reply_text(
+                        menu_text,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
+            
             return ConversationHandler.END
         
         # Start login process - simple version
@@ -159,7 +209,7 @@ class AuthHandler:
         )
         
         # Attempt authentication
-        is_authenticated, user_data, error_message = self.auth_service.authenticate_user(email, password)
+        is_authenticated, user_data, error_message = await self.auth_service.authenticate_user(email, password)
         
         if is_authenticated:
             # Create session
@@ -173,17 +223,55 @@ class AuthHandler:
                     f"🏢 {user_data.get('company_name', 'N/A')}\n\n"
                 )
                 
-                # Add permissions info from user_data
-                if user_data.get('is_helpdesk_manager'):
-                    success_text += "👑 *Helpdesk Manager* - Full access\n"
-                elif user_data.get('is_helpdesk_user'):
-                    success_text += "🎫 *Helpdesk User* - Standard access\n"
+                # Add user type and permissions info from user_data
+                user_type = user_data.get('user_type', 'unknown')
+                auth_method = user_data.get('auth_method', 'unknown')
+                
+                if user_type == 'admin_helpdesk':
+                    success_text += "🔧 *Admin/Internal User* (XML-RPC)\n"
+                    if user_data.get('is_helpdesk_manager'):
+                        success_text += "   👑 Helpdesk Manager - Full access\n"
+                    elif user_data.get('is_helpdesk_user'):
+                        success_text += "   🎫 Helpdesk User - Standard access\n"
+                    else:
+                        success_text += "   👤 Internal User - Basic access\n"
+                elif user_type == 'portal_user':
+                    success_text += "🌐 *Portal User* (Web Portal)\n"
+                    success_text += "   👤 Customer/Portal access\n"
                 else:
                     success_text += "👤 *User* - Basic access\n"
                 
-                success_text += "\nUse /menu to access ticket features!"
+                success_text += "\n🎯 Welcome! Here's your main menu:"
                 
+                # Show success message first
                 await processing_message.edit_text(success_text, parse_mode='Markdown')
+                
+                # Then show the menu
+                if self.keyboards:
+                    keyboard = self.keyboards.get_main_menu_keyboard()
+                    
+                    # Add user type info to menu
+                    type_display = ""
+                    if user_type == 'admin_helpdesk':
+                        type_display = "🔧 Admin/Internal User"
+                    elif user_type == 'portal_user':
+                        type_display = "🌐 Portal User"
+                    else:
+                        type_display = "👤 User"
+                    
+                    menu_text = (
+                        f"🏠 <b>Main Menu</b>\n\n"
+                        f"👤 Logged in as: <b>{user_data['name']}</b>\n"
+                        f"📧 Email: {email}\n"
+                        f"🔑 Type: <b>{type_display}</b>\n\n"
+                        "Choose an option below:"
+                    )
+                    
+                    await update.message.reply_text(
+                        menu_text,
+                        reply_markup=keyboard,
+                        parse_mode='HTML'
+                    )
                 
                 logger.info(f"User {user.id} ({email}) authenticated successfully")
                 
