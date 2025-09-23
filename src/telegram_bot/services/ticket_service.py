@@ -31,6 +31,7 @@ class TicketService:
                 'title': f"Ticket từ Telegram - {user_data['username']}",
                 'description': user_data['description'],
                 'telegram_chat_id': str(user_data['chat_id']),
+                'telegram_username': user_data.get('username', ''),  # Thêm telegram_username
                 'priority': user_data['priority']  # Already integer
             }
             

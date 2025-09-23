@@ -394,20 +394,13 @@ class PostgreSQLConnector:
             description_html = f'<div data-oe-version="1.2">{description_text}</div>'
             
             # Tạo data structure cho ticket
-            # Thêm user identifier vào name template (luôn ưu tiên Telegram username)
-            telegram_username = ticket_data.get('telegram_username', '').strip()
-            if telegram_username and telegram_username != 'None' and telegram_username != '':
-                user_identifier = f"user:@{telegram_username}"
-            else:
-                # Fallback: sử dụng authenticated email hoặc unknown
-                user_email = ticket_data.get('partner_email') or ticket_data.get('email', 'unknown@email.com')
-                user_identifier = user_email
-            
-            ticket_name_with_identifier = f"{config['name_template']} - {user_identifier}"
+            # Thêm email vào name template
+            user_email = ticket_data.get('email', 'unknown@email.com')
+            ticket_name_with_email = f"{config['name_template']} - {user_email}"
             
             helpdesk_data = {
                 'number': ticket_number,  # VN00001, TH00001, etc.
-                'name': ticket_name_with_identifier,  # From Telegram Vietnam - user:@Leo2479 or user@email.com
+                'name': ticket_name_with_email,  # From Telegram Vietnam - user@email.com
                 'description': description_html,
                 'priority': str(ticket_data.get('priority', '1')),
                 'stage_id': config['stage_id'],  # Stage cho destination
