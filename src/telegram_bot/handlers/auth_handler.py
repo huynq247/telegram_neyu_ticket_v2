@@ -224,7 +224,7 @@ class AuthHandler:
                 try:
                     from ..services.telegram_mapping_service import TelegramMappingService
                     mapping_service = TelegramMappingService()
-                    await mapping_service.save_mapping(user.id, email)
+                    mapping_service.save_mapping(user.id, email)
                     logger.info(f"Saved telegram mapping for user {user.id} -> {email}")
                 except Exception as e:
                     logger.warning(f"Failed to save telegram mapping: {e}")
@@ -348,7 +348,7 @@ class AuthHandler:
         try:
             from ..services.telegram_mapping_service import TelegramMappingService
             mapping_service = TelegramMappingService()
-            await mapping_service.revoke_mapping(user.id)
+            mapping_service.revoke_mapping(user.id)
             logger.info(f"Revoked telegram mapping for user {user.id}")
         except Exception as e:
             logger.warning(f"Failed to revoke telegram mapping: {e}")
