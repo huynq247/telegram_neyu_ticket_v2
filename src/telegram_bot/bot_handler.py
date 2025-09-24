@@ -5,7 +5,11 @@ Coordinator chính điều phối các module con
 import asyncio
 import logging
 import threading
+import warnings
 from typing import Dict, Any, Optional
+
+# Suppress telegram bot warnings about per_message settings
+warnings.filterwarnings("ignore", message=".*per_message.*", category=UserWarning)
 
 from telegram import Update
 from telegram.ext import (

@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from ..services.auth_service import OdooAuthService
 from ..utils.formatters import BotFormatters
+from ..utils.rate_limiter import rate_limit_check
 
 # Conversation states - should match bot_handler.py
 WAITING_EMAIL, WAITING_PASSWORD = range(1, 3)
@@ -32,6 +33,7 @@ class AuthHandler:
         # Temporary storage for login process
         self.login_sessions = {}
     
+    @rate_limit_check
     async def login_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
         Handle /login command - start authentication flow
@@ -136,6 +138,7 @@ class AuthHandler:
         logger.info(f"User {user.id} ({user.username}) started login process")
         return WAITING_EMAIL
     
+    @rate_limit_check
     async def receive_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
         Handle email input from user
@@ -168,6 +171,7 @@ class AuthHandler:
         logger.info(f"User {user.id} provided email: {email}")
         return WAITING_PASSWORD
     
+    @rate_limit_check
     async def receive_password(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """
         Handle password input and complete authentication

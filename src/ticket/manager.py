@@ -6,8 +6,18 @@ import logging
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+import sys
+import os
 
-logger = logging.getLogger(__name__)
+# Add project root to path for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+try:
+    from src.telegram_bot.utils.smart_logging import get_smart_logger
+    logger = get_smart_logger(__name__)
+except ImportError:
+    # Fallback to regular logger if smart_logging not available
+    logger = logging.getLogger(__name__)
 
 class TicketManager:
     """Class quản lý tickets giữa Telegram và Odoo"""
@@ -156,7 +166,11 @@ class TicketManager:
             completed_tickets = self.pg_connector.get_completed_tickets()
             
             if not completed_tickets:
-                logger.debug("TicketManager: Không có tickets hoàn thành mới")
+                # Sử dụng throttled logging để tránh spam
+                if hasattr(logger, 'debug_throttled'):
+                    logger.debug_throttled("TicketManager: Không có tickets hoàn thành mới", interval=600)  # 10 minutes
+                else:
+                    logger.debug("TicketManager: Không có tickets hoàn thành mới")
                 return
             
             # Thông báo cho từng ticket chưa được thông báo

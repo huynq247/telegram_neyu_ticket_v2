@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     log_backup_count: int = Field(5, env="LOG_BACKUP_COUNT")
     
     # Ticket monitoring settings
-    ticket_check_interval: int = Field(60, env="TICKET_CHECK_INTERVAL")  # seconds
+    ticket_check_interval: int = Field(300, env="TICKET_CHECK_INTERVAL")  # seconds (5 minutes to reduce log spam)
     
     # Database settings (nếu cần local database)
     database_url: Optional[str] = Field(None, env="DATABASE_URL")

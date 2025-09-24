@@ -265,12 +265,15 @@ class PostgreSQLConnector:
             try:
                 from ..config.country_config import get_country_config
             except ImportError:
-                # Inline config as fallback
+                # Inline config as fallback - UPDATED to include all countries
                 COUNTRY_CONFIG = {
                     'Vietnam': {'code': 'VN', 'table': 'helpdesk_ticket', 'prefix': 'VN'},
                     'Thailand': {'code': 'TH', 'table': 'helpdesk_ticket_thailand', 'prefix': 'TH'},
                     'India': {'code': 'IN', 'table': 'helpdesk_ticket_india', 'prefix': 'IN'},
-                    'Singapore': {'code': 'SG', 'table': 'helpdesk_ticket_singapore', 'prefix': 'SG'}
+                    'Singapore': {'code': 'SG', 'table': 'helpdesk_ticket_singapore', 'prefix': 'SG'},
+                    'Philippines': {'code': 'PH', 'table': 'helpdesk_ticket_philippines', 'prefix': 'PH'},
+                    'Malaysia': {'code': 'MY', 'table': 'helpdesk_ticket_malaysia', 'prefix': 'MY'},
+                    'Indonesia': {'code': 'ID', 'table': 'helpdesk_ticket_indonesia', 'prefix': 'ID'}
                 }
                 
                 def get_country_config(country_name):
@@ -317,10 +320,38 @@ class PostgreSQLConnector:
             
         except Exception as e:
             logger.error(f"Lỗi tạo {country} ticket number: {e}")
-            # Fallback - generate random number with new format
+            # Fallback - generate random number with CORRECT prefix from config
             import random
             from datetime import datetime
-            fallback_prefix = country[:2].upper() if len(country) >= 2 else "XX"
+            
+            # Use the correct prefix from config, not country name
+            try:
+                # Try to get correct prefix from config
+                try:
+                    from ..config.country_config import get_country_config
+                except ImportError:
+                    # Inline config as fallback
+                    COUNTRY_CONFIG = {
+                        'Vietnam': {'code': 'VN', 'table': 'helpdesk_ticket', 'prefix': 'VN'},
+                        'Thailand': {'code': 'TH', 'table': 'helpdesk_ticket_thailand', 'prefix': 'TH'},
+                        'India': {'code': 'IN', 'table': 'helpdesk_ticket_india', 'prefix': 'IN'},
+                        'Singapore': {'code': 'SG', 'table': 'helpdesk_ticket_singapore', 'prefix': 'SG'},
+                        'Philippines': {'code': 'PH', 'table': 'helpdesk_ticket_philippines', 'prefix': 'PH'},
+                        'Malaysia': {'code': 'MY', 'table': 'helpdesk_ticket_malaysia', 'prefix': 'MY'},
+                        'Indonesia': {'code': 'ID', 'table': 'helpdesk_ticket_indonesia', 'prefix': 'ID'}
+                    }
+                    
+                    def get_country_config(country_name):
+                        if country_name not in COUNTRY_CONFIG:
+                            raise ValueError(f"Quốc gia '{country_name}' không được hỗ trợ")
+                        return COUNTRY_CONFIG[country_name]
+                
+                config = get_country_config(country)
+                fallback_prefix = config['prefix']
+            except:
+                # Last resort fallback
+                fallback_prefix = country[:2].upper() if len(country) >= 2 else "XX"
+            
             date_part = datetime.now().strftime('%d%m%y')
             return f"{fallback_prefix}{date_part}{str(random.randint(1, 999)).zfill(3)}"
     
@@ -344,7 +375,7 @@ class PostgreSQLConnector:
             try:
                 from ..config.country_config import get_country_config
             except ImportError:
-                # Inline config as fallback
+                # Inline config as fallback - COMPLETE with all countries
                 COUNTRY_CONFIG = {
                     'Vietnam': {
                         'code': 'VN', 'table': 'helpdesk_ticket', 'prefix': 'VN',
@@ -369,6 +400,24 @@ class PostgreSQLConnector:
                         'name_template': 'From Telegram Singapore',
                         'description_template': 'Ticket từ Singapore cho user request. {description}',
                         'team_id': 4, 'stage_id': 1
+                    },
+                    'Philippines': {
+                        'code': 'PH', 'table': 'helpdesk_ticket_philippines', 'prefix': 'PH',
+                        'name_template': 'From Telegram Philippines',
+                        'description_template': 'Ticket từ Philippines cho user request. {description}',
+                        'team_id': 4, 'stage_id': 1
+                    },
+                    'Malaysia': {
+                        'code': 'MY', 'table': 'helpdesk_ticket_malaysia', 'prefix': 'MY',
+                        'name_template': 'From Telegram Malaysia',
+                        'description_template': 'Ticket từ Malaysia cho user request. {description}',
+                        'team_id': 5, 'stage_id': 1
+                    },
+                    'Indonesia': {
+                        'code': 'ID', 'table': 'helpdesk_ticket_indonesia', 'prefix': 'ID',
+                        'name_template': 'From Telegram Indonesia',
+                        'description_template': 'Ticket từ Indonesia cho user request. {description}',
+                        'team_id': 6, 'stage_id': 1
                     }
                 }
                 
@@ -725,7 +774,11 @@ class PostgreSQLConnector:
                 tickets.append(ticket_info)
             
             cursor.close()
-            logger.info(f"Tìm thấy {len(tickets)} tickets hoàn thành")
+            # Chỉ log khi có tickets hoàn thành để tránh spam logs
+            if len(tickets) > 0:
+                logger.info(f"Tìm thấy {len(tickets)} tickets hoàn thành")
+            else:
+                logger.debug(f"Không có tickets hoàn thành mới")
             return tickets
             
         except Exception as e:

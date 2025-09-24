@@ -8,6 +8,8 @@ import psycopg2
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 import os
+from ..utils.db_retry import db_retry
+from ..utils.performance_monitor import monitor_db
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,7 @@ class TelegramMappingService:
             if self.connection:
                 self.connection.rollback()
     
+    @db_retry
     def save_mapping(self, telegram_id: int, email: str, telegram_username: Optional[str] = None) -> bool:
         """
         Save or update telegram_id -> email mapping
@@ -144,6 +147,8 @@ class TelegramMappingService:
                 self.connection.rollback()
             return False
     
+    @monitor_db
+    @db_retry
     def get_email_for_telegram_id(self, telegram_id: int) -> Optional[str]:
         """
         Get email for telegram ID if mapping exists and not expired
@@ -208,6 +213,7 @@ class TelegramMappingService:
         except Exception as e:
             logger.error(f"Failed to update last_used: {e}")
     
+    @db_retry
     def revoke_mapping(self, telegram_id: int) -> bool:
         """
         Revoke/deactivate mapping for telegram ID
@@ -249,6 +255,7 @@ class TelegramMappingService:
                 self.connection.rollback()
             return False
     
+    @db_retry
     def cleanup_expired_mappings(self) -> int:
         """
         Clean up expired mappings
@@ -287,6 +294,7 @@ class TelegramMappingService:
                 self.connection.rollback()
             return 0
     
+    @db_retry
     def get_mapping_info(self, telegram_id: int) -> Optional[Dict[str, Any]]:
         """
         Get detailed mapping information for telegram ID
