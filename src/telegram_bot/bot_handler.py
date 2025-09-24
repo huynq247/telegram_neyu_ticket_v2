@@ -184,7 +184,8 @@ class TelegramBotHandler:
                 "🔐 *Account:*\n"
                 "• /me - Show your profile & Smart Auth status\n"
                 "• /profile - Detailed profile information\n"
-                "• /logout - Logout from your account\n\n"
+                "• /logout - Logout (keeps Smart Auth)\n"
+                "• /reset_smart_auth - Reset Smart Auto-Authentication\n\n"
                 
                 "ℹ️ *General:*\n"
                 "• /help - Show this help message\n"
@@ -401,6 +402,7 @@ class TelegramBotHandler:
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('menu', self.menu_command))
         self.application.add_handler(CommandHandler('logout', self.auth_handler.logout_command))
+        self.application.add_handler(CommandHandler('reset_smart_auth', self.auth_handler.reset_smart_auth_command))
         
         # Add Smart Auto-Authentication commands
         self.application.add_handler(CommandHandler('me', self.smart_auth_handler.handle_me_command))

@@ -341,29 +341,55 @@ class AuthHandler:
             )
             return
         
-        # Revoke session
+        # Revoke session only (keep telegram mapping for Smart Auth)
         success = self.auth_service.revoke_session(user.id)
-        
-        # Also revoke telegram mapping for Smart Auto-Authentication
-        try:
-            from ..services.telegram_mapping_service import TelegramMappingService
-            mapping_service = TelegramMappingService()
-            mapping_service.revoke_mapping(user.id)
-            logger.info(f"Revoked telegram mapping for user {user.id}")
-        except Exception as e:
-            logger.warning(f"Failed to revoke telegram mapping: {e}")
         
         if success:
             await update.message.reply_text(
                 f"✅ Successfully logged out.\n\n"
                 f"Goodbye, *{user_data['name']}*!\n\n"
-                "🔒 Smart Auto-Authentication has been disabled.\n"
-                "Use /login to authenticate again.",
+                "� Smart Auto-Authentication is still available.\n"
+                "Use /me for quick login or /login for full authentication.",
                 parse_mode='Markdown'
             )
             logger.info(f"User {user.id} ({user_data['email']}) logged out")
         else:
             await update.message.reply_text("❌ Error during logout. Please try again.")
+    
+    async def reset_smart_auth_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /reset_smart_auth command - completely revoke Smart Auth mapping"""
+        user = update.effective_user
+        
+        try:
+            from ..services.telegram_mapping_service import TelegramMappingService
+            mapping_service = TelegramMappingService()
+            
+            # Check if mapping exists
+            mapping = mapping_service.get_mapping(user.id)
+            if not mapping:
+                await update.message.reply_text(
+                    "ℹ️ No Smart Auto-Authentication mapping found.\n"
+                    "Use /login to authenticate."
+                )
+                return
+            
+            # Revoke mapping
+            mapping_service.revoke_mapping(user.id)
+            
+            # Also revoke session if exists
+            self.auth_service.revoke_session(user.id)
+            
+            await update.message.reply_text(
+                "✅ Smart Auto-Authentication has been completely reset.\n\n"
+                "🔒 Your Telegram account is no longer linked to your Odoo account.\n"
+                "Use /login for full authentication.",
+                parse_mode='Markdown'
+            )
+            logger.info(f"User {user.id} reset Smart Auth mapping")
+            
+        except Exception as e:
+            logger.warning(f"Failed to reset Smart Auth mapping for user {user.id}: {e}")
+            await update.message.reply_text("❌ Error resetting Smart Auth. Please try again.")
     
     async def cancel_auth_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handle login cancellation"""
