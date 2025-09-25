@@ -43,7 +43,17 @@ class TicketService:
                 user_info = auth_service.get_user_info(user_id)
                 if user_info and 'email' in user_info:
                     ticket_data['partner_email'] = user_info['email']
-                    ticket_data['partner_name'] = user_info.get('name', 'Telegram User')
+                    
+                    # Handle case where 'name' field is actually an email address
+                    user_name = user_info.get('name', 'Telegram User')
+                    if '@' in user_name:
+                        # If name contains @, it's likely an email - extract proper name
+                        display_name = user_name.split('@')[0].replace('.', ' ').replace('_', ' ').title()
+                        ticket_data['partner_name'] = display_name
+                        logger.info(f"Extracted partner name '{display_name}' from email-like name field '{user_name}'")
+                    else:
+                        # Use name as-is if it doesn't look like an email
+                        ticket_data['partner_name'] = user_name
                     
                     # Extract user type and auth method
                     user_type = user_info.get('user_type', 'portal_user')

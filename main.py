@@ -52,6 +52,11 @@ class TelegramNeyuApp:
             True nếu khởi tạo thành công
         """
         try:
+            # Version banner
+            print("=" * 60)
+            print("🤖 TELEGRAM NEYU TICKET BOT v2.2.1")
+            print("=" * 60)
+            logger.info("🚀 Starting Telegram Neyu Bot v2.2.1")
             logger.info("Bắt đầu khởi tạo components...")
             
             # 1. Khởi tạo PostgreSQL Connector
@@ -104,6 +109,7 @@ class TelegramNeyuApp:
             logger.info("✅ Telegram Bot Handler khởi tạo thành công")
             
             logger.info("🎉 Tất cả components đã được khởi tạo thành công")
+            logger.info("✨ Telegram Neyu Bot v2.2.1 ready to serve!")
             return True
             
         except Exception as e:

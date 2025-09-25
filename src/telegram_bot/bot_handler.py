@@ -394,10 +394,11 @@ class TelegramBotHandler:
             ]
         )
 
-        # Add all handlers
-        self.application.add_handler(auth_conversation_handler)
-        self.application.add_handler(view_tickets_conversation_handler)
+        # Add all handlers - ORDER MATTERS!
+        # Ticket creation should have higher priority than auth
         self.application.add_handler(conversation_handler)
+        self.application.add_handler(view_tickets_conversation_handler)
+        self.application.add_handler(auth_conversation_handler)
         self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('menu', self.menu_command))

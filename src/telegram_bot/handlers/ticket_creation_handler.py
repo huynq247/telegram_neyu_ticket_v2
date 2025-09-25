@@ -5,6 +5,7 @@ Handles the complete ticket creation conversation flow
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
+from src.telegram_bot.utils.formatters import BotFormatters
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class TicketCreationHandler:
         
         # Show destination selection
         keyboard = self.keyboards.get_destination_keyboard()
-        message = self.formatters.format_destination_selection()
+        message = BotFormatters.format_destination_selection()
         
         await update.message.reply_text(
             message,
@@ -86,8 +87,8 @@ class TicketCreationHandler:
         
         # Show destination selection
         keyboard = self.keyboards.get_destination_keyboard()
-        message = self.formatters.format_destination_selection()
-        
+        message = BotFormatters.format_destination_selection()
+
         await query.edit_message_text(
             message,
             reply_markup=keyboard,
@@ -110,10 +111,21 @@ class TicketCreationHandler:
         self.user_service.update_user_data(user_id, 'destination', destination)
         
         # Request description
-        message = self.formatters.format_description_request(destination)
-        await query.edit_message_text(message, parse_mode='HTML')
-        
-        return WAITING_DESCRIPTION
+        try:
+            message = BotFormatters.format_description_request(destination)
+            logger.info(f"Formatted description request message for destination: {destination}")
+            
+            await query.edit_message_text(message, parse_mode='HTML')
+            logger.info(f"Successfully sent description request to user {user_id}")
+            
+            return WAITING_DESCRIPTION
+        except Exception as e:
+            logger.error(f"Error in destination_callback for user {user_id}: {e}")
+            await query.edit_message_text(
+                "❌ Có lỗi xảy ra. Vui lòng thử lại sau.",
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
     
     async def description_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý tin nhắn mô tả"""
@@ -125,7 +137,7 @@ class TicketCreationHandler:
         
         # Request priority
         keyboard = self.keyboards.get_priority_keyboard()
-        message = self.formatters.format_priority_selection()
+        message = BotFormatters.format_priority_selection()
         
         await update.message.reply_text(
             message,
@@ -152,7 +164,7 @@ class TicketCreationHandler:
         
         # Show confirmation
         keyboard = self.keyboards.get_confirmation_keyboard()
-        message = self.formatters.format_ticket_confirmation(user_data, priority_text)
+        message = BotFormatters.format_ticket_confirmation(user_data, priority_text)
         
         await query.edit_message_text(
             message,
@@ -172,6 +184,19 @@ class TicketCreationHandler:
         if query.data == "cancel_ticket":
             await query.edit_message_text("❌ Đã hủy tạo ticket.")
             self.user_service.clear_user_data(user_id)
+            
+            # Auto redirect to menu after cancel
+            is_valid, user_data = self.auth_service.validate_session(user_id)
+            if is_valid:
+                keyboard = self.keyboards.get_main_menu_keyboard()
+                menu_text = (
+                    f"🏠 <b>Main Menu</b>\n\n"
+                    f"👤 Logged in as: <b>{user_data['name']}</b>\n"
+                    f"📧 Email: {user_data['email']}\n\n"
+                    "Choose an option below:"
+                )
+                await query.message.reply_text(menu_text, reply_markup=keyboard, parse_mode='HTML')
+            
             return ConversationHandler.END
         
         if query.data == "confirm_ticket":
@@ -191,12 +216,12 @@ class TicketCreationHandler:
                 
                 # Format response message
                 if result['success']:
-                    message = self.formatters.format_ticket_success(result, user_data)
+                    message = BotFormatters.format_ticket_success(result, user_data)
                     keyboard = self.keyboards.get_back_to_menu_keyboard()
                     logger.info(f"Ticket created successfully for user {user_id}")
                     await query.edit_message_text(message, reply_markup=keyboard, parse_mode='HTML')
                 else:
-                    message = self.formatters.format_ticket_error(result.get('message', 'Unknown error'))
+                    message = BotFormatters.format_ticket_error(result.get('message', 'Unknown error'))
                     logger.error(f"Failed to create ticket for user {user_id}")
                     await query.edit_message_text(message, parse_mode='HTML')
                 
@@ -218,4 +243,17 @@ class TicketCreationHandler:
         self.user_service.clear_user_data(user_id)
         
         await update.message.reply_text("❌ Đã hủy tạo ticket.")
+        
+        # Auto redirect to menu after cancel
+        is_valid, user_data = self.auth_service.validate_session(user_id)
+        if is_valid:
+            keyboard = self.keyboards.get_main_menu_keyboard()
+            menu_text = (
+                f"🏠 <b>Main Menu</b>\n\n"
+                f"👤 Logged in as: <b>{user_data['name']}</b>\n"
+                f"📧 Email: {user_data['email']}\n\n"
+                "Choose an option below:"
+            )
+            await update.message.reply_text(menu_text, reply_markup=keyboard, parse_mode='HTML')
+        
         return ConversationHandler.END
