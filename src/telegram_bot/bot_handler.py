@@ -33,6 +33,7 @@ from .handlers.ticket_creation_handler import TicketCreationHandler, WAITING_DES
 from .services.ticket_service import TicketService
 from .services.user_service import UserService
 from .services.auth_service import OdooAuthService
+from .services.auto_logout_service import AutoLogoutService
 from .handlers.auth_handler import AuthHandler
 from .utils.keyboards import BotKeyboards
 from .utils.formatters import BotFormatters
@@ -68,6 +69,9 @@ class TelegramBotHandler:
         # Initialize authentication service with XML-RPC URL
         self.auth_service = OdooAuthService(odoo_config['xmlrpc_url'], odoo_config['database'])
         self.auth_handler = AuthHandler(self.auth_service, self.keyboards)
+        
+        # Initialize auto-logout service (10 minutes inactivity timeout)
+        self.auto_logout_service = None  # Will be initialized after bot is ready
         
         # Initialize smart auth handler
         from .handlers.smart_auth_handler import SmartAuthHandler
@@ -301,6 +305,27 @@ class TelegramBotHandler:
             logger.error("Application chưa được khởi tạo")
             return
         
+        # Add activity tracking middleware (runs before all handlers)
+        async def track_user_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            """Middleware to track user activity for auto-logout"""
+            if update.effective_user and hasattr(self, 'auto_logout_service') and self.auto_logout_service:
+                user_id = update.effective_user.id
+                
+                # Only track if user is authenticated
+                is_valid, _ = self.auth_service.validate_session(user_id)
+                if is_valid:
+                    self.auto_logout_service.track_activity(user_id)
+        
+        # Register activity tracking as pre-processor (group -1 runs first)
+        self.application.add_handler(
+            MessageHandler(filters.ALL, track_user_activity),
+            group=-1
+        )
+        self.application.add_handler(
+            CallbackQueryHandler(track_user_activity),
+            group=-1
+        )
+        
         # Conversation handler cho tạo ticket - using ticket creation handler
         conversation_handler = ConversationHandler(
             entry_points=[
@@ -453,7 +478,17 @@ class TelegramBotHandler:
             
             self.application = Application.builder().token(self.token).request(request).build()
             self.setup_handlers()
+            
+            # Initialize and start auto-logout service
+            self.auto_logout_service = AutoLogoutService(
+                self.auth_service, 
+                self,  # Pass bot handler for sending messages
+                inactive_minutes=10  # 10 minutes timeout
+            )
+            self.auto_logout_service.start_monitoring()
+            
             logger.info("✅ Telegram Bot đã được khởi tạo thành công")
+            logger.info("✅ Auto-logout service started (10 min timeout)")
         except Exception as e:
             logger.error(f"❌ Lỗi khởi tạo bot: {e}")
             raise
@@ -495,6 +530,11 @@ class TelegramBotHandler:
         logger.info("Đang dừng Telegram Bot...")
         try:
             self.running = False
+            
+            # Stop auto-logout service
+            if self.auto_logout_service:
+                self.auto_logout_service.stop_monitoring()
+                logger.info("✅ Auto-logout service stopped")
             
             # Stop updater if running
             if self.application and hasattr(self.application, 'updater'):

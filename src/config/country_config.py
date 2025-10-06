@@ -12,7 +12,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram Vietnam',
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_id_seq',  # Sequence hiện tại
-        'team_id': 1,           # Team ID mặc định
+        'team_id': 4,           # Team ID mặc định
         'stage_id': 1           # Stage ID mặc định
     },
     'Thailand': {
@@ -22,7 +22,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram Thailand',
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_thailand_seq',
-        'team_id': 2,           # Thailand team (correct mapping)
+        'team_id': 5,           # Thailand team (correct mapping)
         'stage_id': 1
     },
     'India': {
@@ -32,7 +32,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram India', 
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_india_seq',
-        'team_id': 3,           # India team (correct mapping)
+        'team_id': 9,           # India team (correct mapping)
         'stage_id': 1
     },
     'Philippines': {
@@ -42,7 +42,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram Philippines',
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_philippines_seq', 
-        'team_id': 4,           # Philippines team
+        'team_id': 8,           # Philippines team
         'stage_id': 1
     },
     'Malaysia': {
@@ -52,7 +52,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram Malaysia',
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_malaysia_seq',
-        'team_id': 5,           # Malaysia team
+        'team_id': 6,           # Malaysia team
         'stage_id': 1
     },
     'Indonesia': {
@@ -62,7 +62,7 @@ COUNTRY_CONFIG = {
         'name_template': 'From Telegram Indonesia',
         'description_template': '{description}',
         'sequence': 'helpdesk_ticket_indonesia_seq', 
-        'team_id': 6,           # Indonesia team (Team 6)
+        'team_id': 7,           # Indonesia team (Team 6)
         'stage_id': 1
     }
 }

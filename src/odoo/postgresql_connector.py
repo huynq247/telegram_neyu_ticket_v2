@@ -653,7 +653,7 @@ class PostgreSQLConnector:
     
     def get_ticket(self, ticket_id: int) -> Optional[Dict[str, Any]]:
         """
-        Lấy thông tin ticket từ project_task table
+        Lấy thông tin ticket từ helpdesk_ticket table
         
         Args:
             ticket_id: ID của ticket
@@ -664,25 +664,23 @@ class PostgreSQLConnector:
         try:
             cursor = self.connection.cursor()
             
-            # Query từ project_task với join để lấy thêm thông tin
+            # Query từ helpdesk_ticket với join để lấy thêm thông tin
             query = """
                 SELECT 
-                    pt.id,
-                    pt.name,
-                    pt.description,
-                    pt.state,
-                    pt.priority,
-                    pt.project_id,
-                    pt.stage_id,
-                    pt.x_tracking_id,
-                    pt.create_date,
-                    pt.write_date,
-                    pp.name as project_name,
-                    pps.name as stage_name
-                FROM project_task pt
-                LEFT JOIN project_project pp ON pt.project_id = pp.id
-                LEFT JOIN project_project_stage pps ON pt.stage_id = pps.id
-                WHERE pt.id = %s;
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    ht.priority,
+                    ht.team_id,
+                    ht.stage_id,
+                    ht.create_date,
+                    ht.write_date,
+                    htt.name as team_name,
+                    hts.name as stage_name
+                FROM helpdesk_ticket ht
+                LEFT JOIN helpdesk_ticket_team htt ON ht.team_id = htt.id
+                LEFT JOIN helpdesk_ticket_stage hts ON ht.stage_id = hts.id
+                WHERE ht.id = %s;
             """
             
             cursor.execute(query, (ticket_id,))
@@ -697,15 +695,13 @@ class PostgreSQLConnector:
                 'id': row[0],
                 'name': row[1],
                 'description': row[2] or '',
-                'state': row[3],
-                'priority': row[4],
-                'project_id': row[5],
-                'stage_id': row[6],
-                'tracking_id': row[7],
-                'create_date': row[8],
-                'write_date': row[9],
-                'project_name': row[10] if isinstance(row[10], str) else (row[10].get('en_US', '') if row[10] else ''),
-                'stage_name': row[11] if isinstance(row[11], str) else (row[11].get('en_US', '') if row[11] else '')
+                'priority': row[3],
+                'team_id': row[4],
+                'stage_id': row[5],
+                'create_date': row[6],
+                'write_date': row[7],
+                'team_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else ''),
+                'stage_name': row[9] if isinstance(row[9], str) else (row[9].get('en_US', '') if row[9] else '')
             }
             
             cursor.close()
@@ -718,7 +714,7 @@ class PostgreSQLConnector:
     
     def get_completed_tickets(self, telegram_chat_id: str = None) -> List[Dict[str, Any]]:
         """
-        Lấy danh sách tickets đã hoàn thành từ project_task
+        Lấy danh sách tickets đã hoàn thành từ helpdesk_ticket
         
         Args:
             telegram_chat_id: Lọc theo chat ID cụ thể (optional)
@@ -729,32 +725,32 @@ class PostgreSQLConnector:
         try:
             cursor = self.connection.cursor()
             
-            # Query tickets có stage "Done" (stage_id = 3)
+            # Query tickets có stage "Done" hoặc "Solved" (cần check stage nào là done)
+            # Tạm thời return empty list vì cần implement logic phù hợp với helpdesk
             base_query = """
                 SELECT 
-                    pt.id,
-                    pt.name,
-                    pt.description,
-                    pt.state,
-                    pt.priority,
-                    pt.x_tracking_id,
-                    pt.create_date,
-                    pt.write_date,
-                    pps.name as stage_name
-                FROM project_task pt
-                LEFT JOIN project_project_stage pps ON pt.stage_id = pps.id
-                WHERE pt.stage_id = 3  -- Done stage
+                    ht.id,
+                    ht.name,
+                    ht.description,
+                    ht.priority,
+                    ht.create_date,
+                    ht.write_date,
+                    hts.name as stage_name,
+                    htt.name as team_name
+                FROM helpdesk_ticket ht
+                LEFT JOIN helpdesk_ticket_stage hts ON ht.stage_id = hts.id
+                LEFT JOIN helpdesk_ticket_team htt ON ht.team_id = htt.id
+                WHERE ht.stage_id IN (
+                    SELECT id FROM helpdesk_ticket_stage 
+                    WHERE LOWER(name::text) LIKE '%done%' 
+                       OR LOWER(name::text) LIKE '%solved%' 
+                       OR LOWER(name::text) LIKE '%closed%'
+                )
             """
             
-            # Thêm filter theo tracking_id nếu có
-            params = []
-            if telegram_chat_id:
-                base_query += " AND pt.x_tracking_id = %s"
-                params.append(f"TG_{telegram_chat_id}")
+            base_query += " ORDER BY ht.write_date DESC LIMIT 20;"
             
-            base_query += " ORDER BY pt.write_date DESC LIMIT 20;"
-            
-            cursor.execute(base_query, params)
+            cursor.execute(base_query)
             rows = cursor.fetchall()
             
             tickets = []
@@ -763,13 +759,11 @@ class PostgreSQLConnector:
                     'id': row[0],
                     'name': row[1],
                     'description': row[2] or '',
-                    'state': row[3],
-                    'priority': row[4],
-                    'tracking_id': row[5],
-                    'create_date': row[6],
-                    'write_date': row[7],
-                    'stage_name': row[8] if isinstance(row[8], str) else (row[8].get('en_US', '') if row[8] else ''),
-                    'telegram_chat_id': row[5].replace('TG_', '') if row[5] and row[5].startswith('TG_') else ''
+                    'priority': row[3],
+                    'create_date': row[4],
+                    'write_date': row[5],
+                    'stage_name': row[6] if isinstance(row[6], str) else (row[6].get('en_US', '') if row[6] else ''),
+                    'team_name': row[7] if isinstance(row[7], str) else (row[7].get('en_US', '') if row[7] else '')
                 }
                 tickets.append(ticket_info)
             
