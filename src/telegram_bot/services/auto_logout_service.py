@@ -178,31 +178,39 @@ class AutoLogoutService:
             
             if hasattr(self.telegram_handler, 'application') and self.telegram_handler.application:
                 # Clear conversation state for this user
-                for handler in self.telegram_handler.application.handlers.get(0, []):
-                    if isinstance(handler, ConversationHandler):
-                        if user_id in handler.conversations:
-                            handler.update_state(ConversationHandler.END, (user_id, user_id))
-                            self.logger.debug(f"Ended conversation state for user {user_id} before auto-logout")
+                try:
+                    for handler in self.telegram_handler.application.handlers.get(0, []):
+                        if isinstance(handler, ConversationHandler):
+                            # Try to end conversation state safely
+                            try:
+                                handler.update_state(ConversationHandler.END, (user_id, user_id))
+                                self.logger.debug(f"Ended conversation state for user {user_id} before auto-logout")
+                            except Exception as conv_err:
+                                self.logger.debug(f"Could not end conversation for user {user_id}: {conv_err}")
+                except Exception as handler_err:
+                    self.logger.debug(f"Error accessing conversation handlers: {handler_err}")
+            
+            # Send logout notification BEFORE actually logging out
+            logout_message = (
+                f"🚪 <b>Auto Logout</b>\n\n"
+                f"You have been automatically logged out due to "
+                f"{self.inactive_minutes} minutes of inactivity.\n\n"
+                f"Use /login to log in again or /start to see available commands."
+            )
+            
+            await self.telegram_handler.application.bot.send_message(
+                chat_id=user_id,
+                text=logout_message,
+                parse_mode='HTML'
+            )
+            
+            # Small delay to ensure message is sent before logout
+            await asyncio.sleep(0.5)
             
             # Perform logout using revoke_session (synchronous method)
             success = self.auth_service.revoke_session(user_id)
             
             if success:
-                # Send logout notification
-                logout_message = (
-                    f"🚪 *Auto Logout*\n\n"
-                    f"You have been automatically logged out due to "
-                    f"{self.inactive_minutes} minutes of inactivity.\n\n"
-                    f"Use /login to log in again or /start to see available commands."
-                )
-                
-                await self.telegram_handler.application.bot.send_message(
-                    chat_id=user_id,
-                    text=logout_message,
-                    parse_mode='Markdown'
-                )
-                
-                # Clean up tracking data
                 if user_id in self.last_activity:
                     del self.last_activity[user_id]
                 if user_id in self.warned_users:
@@ -219,7 +227,7 @@ class AutoLogoutService:
             return False
     
     async def check_inactive_users(self) -> None:
-        """Check all users for inactivity and handle warnings/logouts"""
+        """Check all users for inactivity and handle logouts"""
         
         users_to_check = list(self.last_activity.keys())
         
@@ -235,14 +243,10 @@ class AutoLogoutService:
                         del self.warned_users[user_id]
                     continue
                 
-                # Check if should logout
+                # Check if should logout (no warning, just logout directly at 10 minutes)
                 if self.should_logout(user_id):
                     await self.auto_logout_user(user_id)
                     continue
-                
-                # Check if should warn
-                if self.should_warn(user_id):
-                    await self.send_warning(user_id)
                     
             except Exception as e:
                 self.logger.error(f"Error checking user {user_id}: {e}")

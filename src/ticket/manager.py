@@ -173,21 +173,32 @@ class TicketManager:
                     logger.debug("TicketManager: Không có tickets hoàn thành mới")
                 return
             
-            # Thông báo cho từng ticket chưa được thông báo
+            # Filter tickets: chỉ giữ lại tickets có chat_id hợp lệ
+            valid_tickets = []
             for ticket in completed_tickets:
+                tracking_id = ticket.get('tracking_id', '')
+                chat_id = tracking_id.replace('TG_', '') if tracking_id.startswith('TG_') else None
+                
+                # Chỉ thêm vào danh sách nếu có chat_id hợp lệ
+                if chat_id and chat_id != 'unknown':
+                    valid_tickets.append(ticket)
+            
+            # Nếu không có tickets hợp lệ nào, return luôn
+            if not valid_tickets:
+                logger.debug("TicketManager: Không có tickets hoàn thành với chat_id hợp lệ")
+                return
+            
+            # Thông báo cho từng ticket chưa được thông báo
+            for ticket in valid_tickets:
                 ticket_id = ticket['id']
                 
                 # Bỏ qua nếu đã thông báo rồi
                 if ticket_id in self.notified_tickets:
                     continue
                 
-                # Lấy chat_id từ tracking_id
+                # Lấy chat_id từ tracking_id (đã validate ở trên)
                 tracking_id = ticket.get('tracking_id', '')
-                chat_id = tracking_id.replace('TG_', '') if tracking_id.startswith('TG_') else None
-                
-                if not chat_id or chat_id == 'unknown':
-                    logger.warning(f"TicketManager: Ticket {ticket_id} không có chat_id hợp lệ")
-                    continue
+                chat_id = tracking_id.replace('TG_', '')
                 
                 # Gửi thông báo qua Telegram
                 if self.telegram_handler:
