@@ -526,38 +526,29 @@ class PostgreSQLConnector:
                 helpdesk_data['partner_email'] = partner_email
                 logger.info(f"Adding partner_email: {partner_email}")
                 
-                # For portal users, automatically link to existing partner or create contact reference
-                if user_type == 'portal_user':
-                    logger.info(f"Processing portal user contact linking for {partner_email}")
+                # Always try to find and link existing partner by email (regardless of user_type)
+                cursor.execute("""
+                    SELECT id, name FROM res_partner 
+                    WHERE email = %s AND active = true
+                """, (partner_email,))
+                
+                existing_partner = cursor.fetchone()
+                if existing_partner:
+                    partner_id, partner_full_name = existing_partner
                     
-                    # Find existing partner by email
-                    cursor.execute("""
-                        SELECT id, name FROM res_partner 
-                        WHERE email = %s AND active = true
-                    """, (partner_email,))
+                    # Link to existing partner
+                    helpdesk_data['partner_id'] = partner_id
+                    helpdesk_data['commercial_partner_id'] = partner_id
+                    helpdesk_data['partner_name'] = partner_name or partner_full_name
                     
-                    existing_partner = cursor.fetchone()
-                    if existing_partner:
-                        partner_id, partner_full_name = existing_partner
-                        
-                        # Link to existing partner (like ticket TH230925353)
-                        helpdesk_data['partner_id'] = partner_id
-                        helpdesk_data['commercial_partner_id'] = partner_id
-                        helpdesk_data['partner_name'] = partner_name or partner_full_name
-                        
-                        logger.info(f"Portal user ticket linked to existing partner ID {partner_id} ({partner_full_name})")
-                    else:
-                        # Partner doesn't exist - still set email/name for reference
-                        helpdesk_data['partner_name'] = partner_name or partner_email
-                        logger.info(f"Portal user ticket created with email reference (no existing partner found)")
-                        
-                        # Note: In production, you might want to create a new partner here
-                        # or handle this case differently based on business rules
+                    logger.info(f"Ticket linked to existing partner ID {partner_id} ({partner_full_name}) for {user_type or 'unknown'} user")
                 else:
-                    # For admin/helpdesk users, just set the email/name without auto-linking
-                    if partner_name:
-                        helpdesk_data['partner_name'] = partner_name
-                        logger.info(f"Admin user ticket with contact info: {partner_email}")
+                    # Partner doesn't exist - still set email/name for reference
+                    helpdesk_data['partner_name'] = partner_name or partner_email
+                    logger.info(f"Ticket created with email reference for {user_type or 'unknown'} user (no existing partner found)")
+                    
+                    # Note: In production, you might want to create a new partner here
+                    # or handle this case differently based on business rules
             
             elif user_type == 'portal_user':
                 # Portal user but no email provided - this shouldn't happen but handle gracefully
