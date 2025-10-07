@@ -27,8 +27,11 @@ class TicketService:
             Ticket creation result
         """
         try:
+            # Get custom title if provided, otherwise use default
+            custom_title = user_data.get('title', '').strip()
+            
             ticket_data = {
-                'title': f"Ticket từ Telegram - {user_data['username']}",
+                'title': custom_title if custom_title else f"Ticket từ Telegram - {user_data['username']}",
                 'description': user_data['description'],
                 'telegram_chat_id': str(user_data['chat_id']),
                 'telegram_username': user_data.get('username', ''),

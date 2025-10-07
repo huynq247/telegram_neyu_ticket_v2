@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 # States
 WAITING_DESTINATION = 0
-WAITING_DESCRIPTION = 1
-WAITING_PRIORITY = 2
+WAITING_TITLE = 1
+WAITING_DESCRIPTION = 2
+WAITING_PRIORITY = 3
 
 class TicketCreationHandler:
     """Handler for ticket creation conversation flow"""
@@ -110,15 +111,15 @@ class TicketCreationHandler:
         # Store destination
         self.user_service.update_user_data(user_id, 'destination', destination)
         
-        # Request description
+        # Request title (new step)
         try:
-            message = BotFormatters.format_description_request(destination)
-            logger.info(f"Formatted description request message for destination: {destination}")
+            message = BotFormatters.format_title_request(destination)
+            logger.info(f"Formatted title request message for destination: {destination}")
             
             await query.edit_message_text(message, parse_mode='HTML')
-            logger.info(f"Successfully sent description request to user {user_id}")
+            logger.info(f"Successfully sent title request to user {user_id}")
             
-            return WAITING_DESCRIPTION
+            return WAITING_TITLE
         except Exception as e:
             logger.error(f"Error in destination_callback for user {user_id}: {e}")
             await query.edit_message_text(
@@ -126,6 +127,28 @@ class TicketCreationHandler:
                 parse_mode='HTML'
             )
             return ConversationHandler.END
+    
+    async def title_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Xử lý tin nhắn title"""
+        user_id = update.effective_user.id
+        title = update.message.text
+        
+        # Store title
+        self.user_service.update_user_data(user_id, 'title', title)
+        
+        # Get destination for next message
+        user_data = self.user_service.get_user_data(user_id)
+        destination = user_data.get('destination', 'Vietnam')
+        
+        # Request description
+        message = BotFormatters.format_description_request(destination)
+        
+        await update.message.reply_text(
+            message,
+            parse_mode='HTML'
+        )
+        
+        return WAITING_DESCRIPTION
     
     async def description_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý tin nhắn mô tả"""

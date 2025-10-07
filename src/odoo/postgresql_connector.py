@@ -443,8 +443,11 @@ class PostgreSQLConnector:
             description_html = f'<div data-oe-version="1.2">{description_text}</div>'
             
             # Tạo data structure cho ticket
-            # Thêm user identifier vào name template (luôn ưu tiên Telegram username)
+            # Build ticket name: [User Title] - [Destination] - [User Identifier]
+            # Priority: Use custom title if provided, otherwise use default template
+            user_title = ticket_data.get('title', '').strip()
             telegram_username = ticket_data.get('telegram_username', '').strip()
+            
             if telegram_username and telegram_username != 'None' and telegram_username != '':
                 user_identifier = f"user:@{telegram_username}"
             else:
@@ -452,7 +455,13 @@ class PostgreSQLConnector:
                 user_email = ticket_data.get('partner_email') or ticket_data.get('email', 'unknown@email.com')
                 user_identifier = user_email
             
-            ticket_name_with_identifier = f"{config['name_template']} - {user_identifier}"
+            # Format ticket name
+            if user_title:
+                # Custom title provided: "[Title] - [Destination] - [user:@username]"
+                ticket_name_with_identifier = f"{user_title} - {destination} - {user_identifier}"
+            else:
+                # No title: use default template "From Telegram [Destination] - [user:@username]"
+                ticket_name_with_identifier = f"{config['name_template']} - {user_identifier}"
             
             helpdesk_data = {
                 'number': ticket_number,  # VN00001, TH00001, etc.

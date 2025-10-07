@@ -134,10 +134,10 @@ class BotFormatters:
     def format_priority_selection() -> str:
         """Format priority selection message"""
         return (
-            "⚡ *Select ticket priority:*\n\n"
-            "🔴 *High* - Urgent issue, needs immediate attention\n"
-            "🟡 *Medium* - Important issue, handle within the day\n"
-            "🟢 *Low* - Regular issue, handle when available"
+            "⚡ <b>Step 4: Select ticket priority</b>\n\n"
+            "🔴 <b>High</b> - Urgent issue, needs immediate attention\n"
+            "🟡 <b>Medium</b> - Important issue, handle within the day\n"
+            "🟢 <b>Low</b> - Regular issue, handle when available"
         )
     
     @staticmethod
@@ -145,13 +145,15 @@ class BotFormatters:
         """Format ticket confirmation message"""
         destination = user_data.get('destination', 'Vietnam')
         emoji = BotFormatters.DESTINATION_EMOJIS.get(destination, '🌍')
+        title = user_data.get('title', 'No title')
         
         return (
-            "📋 *Confirm ticket information:*\n\n"
-            f"👤 *Created by:* {user_data['first_name']}\n"
-            f"🌍 *Destination:* {emoji} {destination}\n"
-            f"📝 *Description:* {user_data['description']}\n"
-            f"⚡ *Priority:* {priority_text}\n\n"
+            "📋 <b>Confirm ticket information:</b>\n\n"
+            f"👤 <b>Created by:</b> {user_data['first_name']}\n"
+            f"🌍 <b>Destination:</b> {emoji} {destination}\n"
+            f"📋 <b>Title:</b> {title}\n"
+            f"📝 <b>Description:</b> {user_data['description']}\n"
+            f"⚡ <b>Priority:</b> {priority_text}\n\n"
             "Confirm ticket creation?"
         )
     
@@ -457,6 +459,29 @@ class BotFormatters:
         return message
     
     @staticmethod
+    def format_title_request(destination: str) -> str:
+        """
+        Format message requesting ticket title
+        
+        Args:
+            destination: Selected destination
+            
+        Returns:
+            Formatted message requesting title
+        """
+        return (
+            f"✈️ <b>Destination:</b> {destination}\n\n"
+            f"📋 <b>Step 2: Enter Ticket Title</b>\n"
+            f"Please provide a brief title for your ticket.\n\n"
+            f"💡 <b>Examples:</b>\n"
+            f"• Network connection issue\n"
+            f"• Request for new equipment\n"
+            f"• Software installation help\n"
+            f"• Account access problem\n\n"
+            f"Type your title below:"
+        )
+    
+    @staticmethod
     def format_description_request(destination: str) -> str:
         """
         Format message requesting ticket description
@@ -469,7 +494,7 @@ class BotFormatters:
         """
         return (
             f"✈️ <b>Destination:</b> {destination}\n\n"
-            f"📝 <b>Step 2: Describe your issue</b>\n"
+            f"📝 <b>Step 3: Describe your issue</b>\n"
             f"Please provide a detailed description of your problem or request.\n\n"
             f"💡 <b>Tips:</b>\n"
             f"• Be specific about what happened\n"

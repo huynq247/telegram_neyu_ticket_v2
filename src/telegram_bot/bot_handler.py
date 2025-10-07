@@ -29,7 +29,7 @@ from telegram.request import HTTPXRequest
 from .handlers.start_handler import StartHandler
 from .handlers.view_ticket_handler import ViewTicketHandler
 from .handlers.menu_handler import MenuHandler
-from .handlers.ticket_creation_handler import TicketCreationHandler, WAITING_DESTINATION, WAITING_DESCRIPTION, WAITING_PRIORITY
+from .handlers.ticket_creation_handler import TicketCreationHandler, WAITING_DESTINATION, WAITING_TITLE, WAITING_DESCRIPTION, WAITING_PRIORITY
 from .services.ticket_service import TicketService
 from .services.user_service import UserService
 from .services.auth_service import OdooAuthService
@@ -336,6 +336,9 @@ class TelegramBotHandler:
                 WAITING_DESTINATION: [
                     CallbackQueryHandler(self.ticket_creation_handler.destination_callback, pattern='^dest_'),
                     CallbackQueryHandler(self.menu_handler.handle_back_to_menu_callback, pattern='^back_to_menu$')
+                ],
+                WAITING_TITLE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.ticket_creation_handler.title_handler)
                 ],
                 WAITING_DESCRIPTION: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.ticket_creation_handler.description_handler)

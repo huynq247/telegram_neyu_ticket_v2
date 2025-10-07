@@ -318,17 +318,13 @@ Choose an option below:
         """Show successful auto-login message"""
         username = user_data.get('name', 'User')
         
-        # Escape markdown special characters in username and email
-        username_escaped = self._escape_markdown(username)
-        email_escaped = self._escape_markdown(email)
-        
         success_msg = f"""
-🎉 *Auto-Login Successful!*
+🎉 <b>Auto-Login Successful!</b>
 
-👋 Welcome back, {username_escaped}!
+👋 Welcome back, {username}!
 
 ✅ Automatically authenticated as:
-📧 Email: {email_escaped}
+📧 Email: {email}
 🔐 Status: Logged in via saved credentials
 ⚡ Method: Smart Authentication
 
@@ -339,7 +335,7 @@ Choose an option below:
         await update.message.reply_text(
             success_msg,
             reply_markup=keyboard,
-            parse_mode='Markdown'
+            parse_mode='HTML'
         )
     
     async def _show_manual_login_required(self, update: Update):
