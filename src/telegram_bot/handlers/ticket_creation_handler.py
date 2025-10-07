@@ -6,6 +6,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from src.telegram_bot.utils.formatters import BotFormatters
+from src.telegram_bot.utils.error_handler import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -121,81 +122,101 @@ class TicketCreationHandler:
             
             return WAITING_TITLE
         except Exception as e:
-            logger.error(f"Error in destination_callback for user {user_id}: {e}")
-            await query.edit_message_text(
-                "❌ Có lỗi xảy ra. Vui lòng thử lại sau.",
-                parse_mode='HTML'
+            logger.error(f"Error in destination_callback for user {user_id}: {e}", exc_info=True)
+            return await ErrorHandler.handle_error_with_menu(
+                update, context, e, "chọn destination",
+                self.keyboards, self.auth_service
             )
-            return ConversationHandler.END
     
     async def title_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý tin nhắn title"""
-        user_id = update.effective_user.id
-        title = update.message.text
-        
-        # Store title
-        self.user_service.update_user_data(user_id, 'title', title)
-        
-        # Get destination for next message
-        user_data = self.user_service.get_user_data(user_id)
-        destination = user_data.get('destination', 'Vietnam')
-        
-        # Request description
-        message = BotFormatters.format_description_request(destination)
-        
-        await update.message.reply_text(
-            message,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_DESCRIPTION
+        try:
+            user_id = update.effective_user.id
+            title = update.message.text
+            
+            # Store title
+            self.user_service.update_user_data(user_id, 'title', title)
+            
+            # Get destination for next message
+            user_data = self.user_service.get_user_data(user_id)
+            destination = user_data.get('destination', 'Vietnam')
+            
+            # Request description
+            message = BotFormatters.format_description_request(destination)
+            
+            await update.message.reply_text(
+                message,
+                parse_mode='HTML'
+            )
+            
+            return WAITING_DESCRIPTION
+        except Exception as e:
+            logger.error(f"Error in title_handler: {e}", exc_info=True)
+            return await ErrorHandler.handle_error_with_menu(
+                update, context, e, "xử lý title",
+                self.keyboards, self.auth_service
+            )
     
     async def description_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý tin nhắn mô tả"""
-        user_id = update.effective_user.id
-        description = update.message.text
-        
-        # Store description
-        self.user_service.update_user_data(user_id, 'description', description)
-        
-        # Request priority
-        keyboard = self.keyboards.get_priority_keyboard()
-        message = BotFormatters.format_priority_selection()
-        
-        await update.message.reply_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_PRIORITY
+        try:
+            user_id = update.effective_user.id
+            description = update.message.text
+            
+            # Store description
+            self.user_service.update_user_data(user_id, 'description', description)
+            
+            # Request priority
+            keyboard = self.keyboards.get_priority_keyboard()
+            message = BotFormatters.format_priority_selection()
+            
+            await update.message.reply_text(
+                message,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            
+            return WAITING_PRIORITY
+        except Exception as e:
+            logger.error(f"Error in description_handler: {e}", exc_info=True)
+            return await ErrorHandler.handle_error_with_menu(
+                update, context, e, "xử lý description",
+                self.keyboards, self.auth_service
+            )
     
     async def priority_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý callback chọn priority"""
-        query = update.callback_query
-        await query.answer()
-        
-        user_id = query.from_user.id
-        priority_callback = query.data
-        
-        # Get priority info
-        priority_code, priority_text = self.ticket_service.get_priority_info(priority_callback)
-        
-        # Store priority
-        self.user_service.update_user_data(user_id, 'priority', priority_code)
-        user_data = self.user_service.get_user_data(user_id)
-        
-        # Show confirmation
-        keyboard = self.keyboards.get_confirmation_keyboard()
-        message = BotFormatters.format_ticket_confirmation(user_data, priority_text)
-        
-        await query.edit_message_text(
-            message,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-        
-        return WAITING_PRIORITY
+        try:
+            query = update.callback_query
+            await query.answer()
+            
+            user_id = query.from_user.id
+            priority_callback = query.data
+            
+            # Get priority info
+            priority_code, priority_text = self.ticket_service.get_priority_info(priority_callback)
+            
+            # Store priority
+            self.user_service.update_user_data(user_id, 'priority', priority_code)
+            user_data = self.user_service.get_user_data(user_id)
+            
+            # Show confirmation
+            keyboard = self.keyboards.get_confirmation_keyboard()
+            message = BotFormatters.format_ticket_confirmation(user_data, priority_text)
+            
+            await query.edit_message_text(
+                message,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            
+            return WAITING_PRIORITY
+        except Exception as e:
+            logger.error(f"Error in priority_callback: {e}", exc_info=True)
+            return await ErrorHandler.handle_error_with_menu(
+                update, context, e, "chọn priority",
+                self.keyboards, self.auth_service
+            )
     
     async def confirm_ticket_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Xử lý xác nhận tạo ticket"""
@@ -252,11 +273,15 @@ class TicketCreationHandler:
                 self.user_service.clear_user_data(user_id)
                 
             except Exception as e:
-                logger.error(f"Exception creating ticket for user {user_id}: {e}")
-                await query.edit_message_text(
-                    "❌ Có lỗi xảy ra khi tạo ticket. Vui lòng thử lại sau."
-                )
+                logger.error(f"Exception creating ticket for user {user_id}: {e}", exc_info=True)
                 self.user_service.clear_user_data(user_id)
+                
+                # Send error message and redirect to menu
+                await ErrorHandler.send_menu_after_error(
+                    update, self.keyboards, self.auth_service,
+                    "❌ <b>Có lỗi xảy ra khi tạo ticket</b>\n\n"
+                    "Vui lòng thử lại sau hoặc liên hệ admin nếu lỗi tiếp diễn.\n\n"
+                )
         
         return ConversationHandler.END
     
