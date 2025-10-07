@@ -32,6 +32,28 @@ class SmartAuthHandler:
         self.mapping_service = TelegramMappingService()
         self.keyboards = BotKeyboards()
     
+    def _escape_markdown(self, text: str) -> str:
+        """
+        Escape markdown special characters for Telegram MarkdownV2
+        
+        Args:
+            text: Text to escape
+            
+        Returns:
+            str: Escaped text safe for Markdown
+        """
+        if not text:
+            return ""
+        
+        # Characters that need escaping in Markdown
+        special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+        
+        escaped_text = str(text)
+        for char in special_chars:
+            escaped_text = escaped_text.replace(char, f'\\{char}')
+        
+        return escaped_text
+    
     @rate_limit_check
     async def handle_me_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -76,13 +98,18 @@ class SmartAuthHandler:
             email = user_data.get('email', 'Unknown')
             user_type = user_data.get('user_type', 'User')
             
+            # Escape markdown special characters
+            username_escaped = self._escape_markdown(username)
+            email_escaped = self._escape_markdown(email)
+            user_type_escaped = self._escape_markdown(user_type)
+            
             welcome_msg = f"""
-👋 **Welcome back, {username}!**
+👋 Welcome back, {username_escaped}!
 
 ✅ You're already authenticated as:
-📧 **Email:** `{email}`
-🏷️ **Type:** {user_type}
-⏰ **Session:** Active
+📧 Email: {email_escaped}
+🏷️ Type: {user_type_escaped}
+⏰ Session: Active
 
 Choose an option below:
             """
@@ -291,15 +318,19 @@ Choose an option below:
         """Show successful auto-login message"""
         username = user_data.get('name', 'User')
         
+        # Escape markdown special characters in username and email
+        username_escaped = self._escape_markdown(username)
+        email_escaped = self._escape_markdown(email)
+        
         success_msg = f"""
-🎉 **Auto-Login Successful!**
+🎉 *Auto-Login Successful!*
 
-👋 Welcome back, **{username}**!
+👋 Welcome back, {username_escaped}!
 
-✅ **Automatically authenticated as:**
-📧 **Email:** `{email}`
-🔐 **Status:** Logged in via saved credentials
-⚡ **Method:** Smart Authentication
+✅ Automatically authenticated as:
+📧 Email: {email_escaped}
+🔐 Status: Logged in via saved credentials
+⚡ Method: Smart Authentication
 
 Choose an option below:
         """
@@ -314,15 +345,15 @@ Choose an option below:
     async def _show_manual_login_required(self, update: Update):
         """Show manual login required message"""
         login_msg = """
-🔐 **Authentication Required**
+🔐 *Authentication Required*
 
 You need to login to access TelegramNeyu features.
 
-**Options:**
-• Use `/login` to authenticate with your Odoo credentials
-• After successful login, use `/me` for quick access next time
+*Options:*
+• Use /login to authenticate with your Odoo credentials
+• After successful login, use /me for quick access next time
 
-💡 **Tip:** Once you login successfully, I'll remember you for future sessions!
+💡 *Tip:* Once you login successfully, I'll remember you for future sessions!
         """
         
         keyboard = self.keyboards.get_login_keyboard()
