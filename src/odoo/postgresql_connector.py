@@ -804,7 +804,8 @@ class PostgreSQLConnector:
                     ht.write_date,
                     ht.stage_id
                 FROM helpdesk_ticket ht
-                WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
+                    AND ht.stage_id != 4
                 ORDER BY ht.create_date DESC
                 LIMIT 10;
             """
@@ -864,6 +865,7 @@ class PostgreSQLConnector:
                     ht.stage_id
                 FROM helpdesk_ticket ht
                 WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
+                    AND ht.stage_id != 4
             """
             
             params = [user_email, f"%{user_email}%"]
@@ -932,6 +934,7 @@ class PostgreSQLConnector:
                 FROM helpdesk_ticket ht
                 WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
                 AND (ht.name ILIKE %s OR ht.description ILIKE %s)
+                AND ht.stage_id != 4
                 ORDER BY ht.create_date DESC
                 LIMIT 15;
             """
@@ -977,12 +980,13 @@ class PostgreSQLConnector:
         try:
             cursor = self.connection.cursor()
             
-            # Count total tickets (limit to max 20 most recent)
+            # Count total tickets (limit to max 20 most recent, exclude Done status)
             count_query = """
                 SELECT COUNT(*) FROM (
                     SELECT ht.id 
                     FROM helpdesk_ticket ht
-                    WHERE ht.partner_email = %s OR ht.partner_email ILIKE %s
+                    WHERE (ht.partner_email = %s OR ht.partner_email ILIKE %s)
+                        AND ht.stage_id != 4
                     ORDER BY ht.create_date DESC
                     LIMIT 20
                 ) as limited_tickets
@@ -994,7 +998,7 @@ class PostgreSQLConnector:
             total_pages = (total_count + per_page - 1) // per_page
             offset = (page - 1) * per_page
             
-            # Get tickets for current page (from max 20 most recent)
+            # Get tickets for current page (from max 20 most recent, exclude Done status)
             query = """
                 SELECT 
                     ht.id,
@@ -1008,7 +1012,8 @@ class PostgreSQLConnector:
                     ht.stage_id
                 FROM (
                     SELECT * FROM helpdesk_ticket ht2
-                    WHERE ht2.partner_email = %s OR ht2.partner_email ILIKE %s
+                    WHERE (ht2.partner_email = %s OR ht2.partner_email ILIKE %s)
+                        AND ht2.stage_id != 4
                     ORDER BY ht2.create_date DESC
                     LIMIT 20
                 ) ht
@@ -1091,11 +1096,12 @@ class PostgreSQLConnector:
                     mm.body,
                     mm.create_date,
                     mm.author_id,
-                    rp.name as author_name,
+                    COALESCE(rp.name, rp.email, ru.login, 'Unknown') as author_name,
                     mm.message_type,
                     mm.subtype_id
                 FROM mail_message mm
                 LEFT JOIN res_partner rp ON mm.author_id = rp.id
+                LEFT JOIN res_users ru ON rp.id = ru.partner_id
                 WHERE mm.res_id = %s 
                     AND mm.model = 'helpdesk.ticket'
                     AND mm.message_type = 'comment'
@@ -1139,13 +1145,14 @@ class PostgreSQLConnector:
             True if successful, False otherwise
         """
         try:
+            cursor = self.connection.cursor()
+            
             # First get the ticket ID from the ticket number
             ticket_query = """
             SELECT id FROM helpdesk_ticket 
             WHERE number = %s
             """
             
-            cursor = self.connection.cursor()
             cursor.execute(ticket_query, (ticket_number,))
             ticket_result = cursor.fetchone()
             
@@ -1155,6 +1162,17 @@ class PostgreSQLConnector:
             
             ticket_id = ticket_result[0]
             
+            # Get partner_id from user email
+            partner_query = """
+            SELECT id FROM res_partner 
+            WHERE email = %s OR email ILIKE %s
+            LIMIT 1
+            """
+            
+            cursor.execute(partner_query, (user_email, f"%{user_email}%"))
+            partner_result = cursor.fetchone()
+            author_id = partner_result[0] if partner_result else None
+            
             # Insert comment into mail_message table
             # This follows Odoo's structure for ticket comments
             insert_comment_query = """
@@ -1163,17 +1181,18 @@ class PostgreSQLConnector:
                 author_id, email_from, create_date, write_date
             ) VALUES (
                 'helpdesk.ticket', %s, %s, 'comment', NULL,
-                NULL, %s, NOW(), NOW()
+                %s, %s, NOW(), NOW()
             )
             """
             
             # Format comment as HTML (Odoo format)
             html_comment = f'<div data-oe-version="1.2">{comment_text}</div>'
             
-            cursor.execute(insert_comment_query, (ticket_id, html_comment, user_email))
+            cursor.execute(insert_comment_query, (ticket_id, html_comment, author_id, user_email))
             self.connection.commit()
+            cursor.close()
             
-            logger.info(f"Comment added successfully to ticket {ticket_number} (ID: {ticket_id}) by {user_email}")
+            logger.info(f"Comment added successfully to ticket {ticket_number} (ID: {ticket_id}) by {user_email} (partner_id: {author_id})")
             return True
             
         except Exception as e:
@@ -1201,8 +1220,9 @@ class PostgreSQLConnector:
                    CASE 
                        WHEN ht.stage_id = 1 THEN 'New'
                        WHEN ht.stage_id = 2 THEN 'In Progress'
-                       WHEN ht.stage_id = 3 THEN 'Solved'
-                       WHEN ht.stage_id = 4 THEN 'Cancelled'
+                       WHEN ht.stage_id = 3 THEN 'Waiting'
+                       WHEN ht.stage_id = 4 THEN 'Done'
+                       WHEN ht.stage_id = 5 THEN 'Cancelled'
                        ELSE 'Unknown'
                    END as stage_name, 
                    ht.create_date

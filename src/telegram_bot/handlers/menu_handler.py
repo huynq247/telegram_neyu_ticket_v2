@@ -57,6 +57,8 @@ class MenuHandler:
     
     async def handle_help_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle help callback"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
         user_id = query.from_user.id
         is_valid, user_data = self.auth_service.validate_session(user_id)
         
@@ -87,7 +89,11 @@ class MenuHandler:
                 "• /help - Show this help message"
             )
         
-        await query.edit_message_text(help_text, parse_mode='HTML')
+        # Add Back to Menu button
+        keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(help_text, parse_mode='HTML', reply_markup=reply_markup)
     
     async def handle_logout_callback(self, query, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle logout callback from menu"""
