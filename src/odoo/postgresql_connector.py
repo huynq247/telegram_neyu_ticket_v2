@@ -66,11 +66,18 @@ class PostgreSQLConnector:
         return stage_mapping.get(stage_id, "Unknown")
     
     def _connect(self) -> None:
-        """Kết nối với PostgreSQL server"""
+        """Kết nối với PostgreSQL server với connection pooling và keepalive"""
         try:
             connection_string = f"host='{self.host}' port='{self.port}' dbname='{self.database}' user='{self.username}' password='{self.password}'"
             
-            self.connection = psycopg2.connect(connection_string)
+            self.connection = psycopg2.connect(
+                connection_string,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+                connect_timeout=10
+            )
             self.connection.autocommit = True
             
             logger.info(f"Kết nối PostgreSQL thành công - {self.host}:{self.port}/{self.database}")
@@ -78,6 +85,60 @@ class PostgreSQLConnector:
         except Exception as e:
             logger.error(f"Lỗi kết nối PostgreSQL: {e}")
             raise
+    
+    def _ensure_connection(self) -> None:
+        """
+        Đảm bảo connection còn sống, reconnect nếu cần
+        """
+        try:
+            if self.connection is None or self.connection.closed:
+                logger.warning("Connection is closed, reconnecting...")
+                self._connect()
+                return
+            
+            # Test connection với simple query
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Connection test failed: {e}, reconnecting...")
+            try:
+                if self.connection:
+                    self.connection.close()
+            except:
+                pass
+            self._connect()
+        except Exception as e:
+            logger.error(f"Error checking connection: {e}")
+            # Try to reconnect anyway
+            try:
+                if self.connection:
+                    self.connection.close()
+            except:
+                pass
+            self._connect()
+    
+    def _ensure_connection(self) -> None:
+        """
+        Ensure database connection is alive, reconnect if needed
+        """
+        try:
+            if self.connection is None or self.connection.closed:
+                logger.warning("Connection is closed, reconnecting...")
+                self._connect()
+            else:
+                # Test connection with a simple query
+                cursor = self.connection.cursor()
+                cursor.execute("SELECT 1")
+                cursor.close()
+        except Exception as e:
+            logger.warning(f"Connection test failed, reconnecting: {e}")
+            try:
+                self._connect()
+            except Exception as reconnect_error:
+                logger.error(f"Failed to reconnect: {reconnect_error}")
+                raise
     
     def test_connection(self) -> bool:
         """
@@ -87,6 +148,8 @@ class PostgreSQLConnector:
             True nếu kết nối thành công
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             cursor.execute("SELECT version();")
             version = cursor.fetchone()
@@ -107,6 +170,8 @@ class PostgreSQLConnector:
             Danh sách tên tables
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT table_name 
@@ -163,6 +228,8 @@ class PostgreSQLConnector:
             Danh sách columns với thông tin
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT column_name, data_type, is_nullable, column_default
@@ -196,6 +263,8 @@ class PostgreSQLConnector:
             Dictionary chứa kết quả test
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # Test read access
@@ -261,6 +330,9 @@ class PostgreSQLConnector:
             Ticket number theo format [COUNTRY_CODE][DDMMYY][XXX] (VN22092501, TH22092502, etc.)
         """
         try:
+            # Ensure connection is alive for database queries
+            self._ensure_connection()
+            
             # Load country config with fallback
             try:
                 from ..config.country_config import get_country_config
@@ -371,6 +443,9 @@ class PostgreSQLConnector:
             Dictionary chứa kết quả tạo ticket
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             # Load country configuration with fallback
             try:
                 from ..config.country_config import get_country_config
@@ -662,6 +737,8 @@ class PostgreSQLConnector:
             Dictionary chứa thông tin ticket hoặc None nếu không tìm thấy
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # Query từ helpdesk_ticket với join để lấy thêm thông tin
@@ -723,6 +800,9 @@ class PostgreSQLConnector:
             Danh sách tickets đã hoàn thành
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             # Query tickets có stage "Done" hoặc "Solved" (cần check stage nào là done)
@@ -790,6 +870,9 @@ class PostgreSQLConnector:
             Danh sách tickets của user
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             query = """
@@ -849,6 +932,8 @@ class PostgreSQLConnector:
             Danh sách tickets được filter
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # Base query
@@ -918,6 +1003,8 @@ class PostgreSQLConnector:
             Danh sách tickets khớp với từ khóa
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             query = """
@@ -978,6 +1065,8 @@ class PostgreSQLConnector:
             Dict chứa tickets và thông tin pagination
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # Count total tickets (limit to max 20 most recent, exclude Done status)
@@ -1070,6 +1159,8 @@ class PostgreSQLConnector:
             List of comments
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # First, find the ticket by tracking number
@@ -1145,6 +1236,8 @@ class PostgreSQLConnector:
             True if successful, False otherwise
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             # First get the ticket ID from the ticket number
@@ -1213,6 +1306,8 @@ class PostgreSQLConnector:
             List of recent tickets with basic info
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
             cursor = self.connection.cursor()
             
             query = """
@@ -1268,6 +1363,9 @@ class PostgreSQLConnector:
             True if successful, False otherwise
         """
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             if not self.connection:
                 logger.error("No database connection available")
                 return False
