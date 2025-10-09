@@ -33,8 +33,11 @@ class TicketManager:
         self.pg_connector = postgresql_connector
         self.telegram_handler = telegram_handler
         
-        # Cache để theo dõi tickets đã thông báo
+        # Cache để theo dõi tickets đã thông báo hoàn thành
         self.notified_tickets = set()
+        
+        # Cache để tracking state hiện tại của tickets (ticket_id -> stage_name)
+        self.ticket_states = {}
         
         # Task cho việc kiểm tra tickets hoàn thành
         self.check_task = None
@@ -218,9 +221,84 @@ class TicketManager:
         except Exception as e:
             logger.error(f"TicketManager: Lỗi kiểm tra tickets hoàn thành - {e}")
     
+    async def check_state_changes(self) -> None:
+        """
+        Kiểm tra và thông báo các thay đổi state của tickets
+        Chỉ thông báo: New → In Progress, In Progress → Waiting
+        """
+        try:
+            # Lấy tất cả active tickets từ DB
+            active_tickets = self.pg_connector.get_all_active_tickets()
+            
+            if not active_tickets:
+                logger.debug("TicketManager: Không có active tickets để check state")
+                return
+            
+            # Filter tickets: chỉ giữ lại tickets có chat_id hợp lệ
+            valid_tickets = []
+            for ticket in active_tickets:
+                tracking_id = ticket.get('tracking_id', '')
+                chat_id = tracking_id.replace('TG_', '') if tracking_id.startswith('TG_') else None
+                
+                if chat_id and chat_id != 'unknown':
+                    valid_tickets.append(ticket)
+            
+            if not valid_tickets:
+                logger.debug("TicketManager: Không có tickets hợp lệ để check state")
+                return
+            
+            # Check state changes cho từng ticket
+            state_changes_detected = 0
+            for ticket in valid_tickets:
+                ticket_id = ticket['id']
+                current_state = ticket.get('stage_name', '').lower()
+                old_state = self.ticket_states.get(ticket_id, '').lower()
+                
+                # Nếu là lần đầu thấy ticket, lưu state và skip
+                if not old_state:
+                    self.ticket_states[ticket_id] = current_state
+                    continue
+                
+                # Nếu state không đổi, skip
+                if old_state == current_state:
+                    continue
+                
+                # Phát hiện state change - CHỈ thông báo những transitions quan trọng
+                notify = False
+                if old_state == 'new' and current_state == 'in progress':
+                    notify = True
+                    logger.info(f"State change detected: Ticket {ticket_id} New → In Progress")
+                elif old_state == 'in progress' and current_state in ['waiting', 'awaiting']:
+                    notify = True
+                    logger.info(f"State change detected: Ticket {ticket_id} In Progress → Waiting")
+                
+                # Gửi notification nếu là transition quan trọng
+                if notify and self.telegram_handler:
+                    tracking_id = ticket.get('tracking_id', '')
+                    chat_id = tracking_id.replace('TG_', '')
+                    
+                    success = await self.telegram_handler.send_state_change_notification(
+                        chat_id, ticket, old_state, current_state
+                    )
+                    
+                    if success:
+                        state_changes_detected += 1
+                        logger.info(f"TicketManager: Đã thông báo state change ticket {ticket_id}")
+                    else:
+                        logger.error(f"TicketManager: Lỗi gửi thông báo state change ticket {ticket_id}")
+                
+                # Update state trong cache
+                self.ticket_states[ticket_id] = current_state
+            
+            if state_changes_detected > 0:
+                logger.info(f"TicketManager: Phát hiện và thông báo {state_changes_detected} state changes")
+                
+        except Exception as e:
+            logger.error(f"TicketManager: Lỗi kiểm tra state changes - {e}")
+    
     async def start_monitoring(self, check_interval: int = 60) -> None:
         """
-        Bắt đầu giám sát tickets hoàn thành
+        Bắt đầu giám sát tickets: hoàn thành + state changes
         
         Args:
             check_interval: Khoảng thời gian kiểm tra (giây)
@@ -229,7 +307,12 @@ class TicketManager:
         
         while True:
             try:
+                # Check completed tickets
                 await self.check_completed_tickets()
+                
+                # Check state changes (New → In Progress, In Progress → Waiting)
+                await self.check_state_changes()
+                
                 await asyncio.sleep(check_interval)
                 
             except asyncio.CancelledError:

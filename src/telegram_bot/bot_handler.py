@@ -546,4 +546,77 @@ class TelegramBotHandler:
                     
         except Exception as e:
             logger.error(f"Error stopping bot: {e}")
-        logger.info("Telegram Bot đã dừng")
+        logger.info("Telegram Bot đã dừng")    
+    async def send_state_change_notification(self, chat_id: str, ticket: Dict[str, Any], old_state: str, new_state: str) -> bool:
+        """
+        Gửi thông báo khi ticket thay đổi state
+        
+        Args:
+            chat_id: Telegram chat ID
+            ticket: Thông tin ticket
+            old_state: State cũ (lowercase)
+            new_state: State mới (lowercase)
+            
+        Returns:
+            True nếu gửi thành công
+        """
+        try:
+            if not self.application:
+                logger.error("Application chưa được khởi tạo")
+                return False
+            
+            # State emojis
+            state_emoji_map = {
+                'new': '🆕',
+                'in progress': '🔄',
+                'waiting': '⏳',
+                'awaiting': '⏳',
+                'done': '✅',
+                'solved': '✅',
+                'cancelled': '❌'
+            }
+            
+            old_emoji = state_emoji_map.get(old_state, '📋')
+            new_emoji = state_emoji_map.get(new_state, '📋')
+            
+            # Format state names for display
+            old_state_display = old_state.title()
+            new_state_display = new_state.title()
+            
+            # Get ticket info
+            ticket_number = ticket.get('number', 'N/A')
+            ticket_name = ticket.get('name', 'No title')
+            priority = ticket.get('priority', 1)
+            
+            # Priority emoji
+            priority_emoji = {1: '🟢', 2: '🟡', 3: '🔴'}.get(priority, '🟡')
+            
+            # Create message
+            message = (
+                f"🔔 <b>Ticket Status Update</b>\n\n"
+                f"📋 <b>Ticket:</b> #{ticket_number}\n"
+                f"📝 <b>Title:</b> {ticket_name}\n"
+                f"{priority_emoji} <b>Priority:</b> {priority}\n\n"
+                f"<b>Status Changed:</b>\n"
+                f"{old_emoji} {old_state_display} → {new_emoji} {new_state_display}\n\n"
+            )
+            
+            # Add specific message based on transition
+            if old_state == 'new' and new_state == 'in progress':
+                message += "👨‍💼 Your ticket is now being processed by our team!"
+            elif old_state == 'in progress' and new_state in ['waiting', 'awaiting']:
+                message += "⏳ We're waiting for additional information or approval.\nYou can add comments or check the status using /start → View My Tickets"
+            
+            # Send message
+            await self.application.bot.send_message(
+                chat_id=chat_id,
+                text=message,
+                parse_mode='HTML'
+            )
+            
+            logger.info(f"Sent state change notification to {chat_id}: {old_state} → {new_state}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Lỗi gửi state change notification đến {chat_id}: {e}")
+            return False

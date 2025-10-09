@@ -49,7 +49,13 @@ class TelegramMappingService:
                 port=port,
                 database=database,
                 user=username,
-                password=password
+                password=password,
+                # Add TCP keepalive to maintain connection
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5,
+                connect_timeout=10
             )
             
             # Create table if not exists
@@ -60,9 +66,34 @@ class TelegramMappingService:
             logger.error(f"Failed to connect to PostgreSQL: {e}")
             self.connection = None
     
+    def _ensure_connection(self):
+        """Ensure database connection is alive, reconnect if needed"""
+        try:
+            # Check if connection is closed
+            if not self.connection or self.connection.closed:
+                logger.warning("TelegramMapping: Database connection closed, reconnecting...")
+                self._connect()
+                return
+            
+            # Test connection with a simple query
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            
+        except Exception as e:
+            logger.warning(f"TelegramMapping: Connection test failed, reconnecting: {e}")
+            try:
+                self._connect()
+            except Exception as reconnect_error:
+                logger.error(f"TelegramMapping: Failed to reconnect: {reconnect_error}")
+                raise
+    
     def _ensure_table_exists(self):
         """Ensure telegram_user_mapping table exists"""
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             create_table_sql = """
@@ -116,6 +147,9 @@ class TelegramMappingService:
             return False
         
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             # Upsert: Insert or update if exists
@@ -164,6 +198,9 @@ class TelegramMappingService:
             return None
         
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             # Get active, non-expired mapping
@@ -198,6 +235,9 @@ class TelegramMappingService:
     def _update_last_used(self, telegram_id: int):
         """Update last_used timestamp for a mapping"""
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             update_sql = """
@@ -229,6 +269,9 @@ class TelegramMappingService:
             return False
         
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             update_sql = """
@@ -268,6 +311,9 @@ class TelegramMappingService:
             return 0
         
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             # Deactivate expired mappings
@@ -309,6 +355,9 @@ class TelegramMappingService:
             return None
         
         try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
             cursor = self.connection.cursor()
             
             select_sql = """

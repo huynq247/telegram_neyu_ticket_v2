@@ -859,6 +859,64 @@ class PostgreSQLConnector:
             logger.error(f"Lỗi lấy completed tickets: {e}")
             return []
     
+    def get_all_active_tickets(self) -> List[Dict[str, Any]]:
+        """
+        Lấy tất cả tickets từ Telegram (có tracking_id) để monitor state changes
+        
+        Returns:
+            Danh sách tickets với stage info
+        """
+        try:
+            # Ensure connection is alive
+            self._ensure_connection()
+            
+            cursor = self.connection.cursor()
+            
+            # Query ALL Telegram tickets với stage name
+            query = """
+                SELECT 
+                    ht.id,
+                    ht.number,
+                    ht.name,
+                    ht.tracking_id,
+                    ht.priority,
+                    ht.stage_id,
+                    hts.name as stage_name,
+                    ht.write_date
+                FROM helpdesk_ticket ht
+                LEFT JOIN helpdesk_ticket_stage hts ON ht.stage_id = hts.id
+                WHERE ht.tracking_id IS NOT NULL 
+                  AND ht.tracking_id LIKE 'TG_%'
+                  AND ht.stage_id IS NOT NULL
+                ORDER BY ht.write_date DESC
+                LIMIT 500;
+            """
+            
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            tickets = []
+            for row in rows:
+                ticket_info = {
+                    'id': row[0],
+                    'number': row[1],
+                    'name': row[2],
+                    'tracking_id': row[3],
+                    'priority': row[4],
+                    'stage_id': row[5],
+                    'stage_name': row[6] if isinstance(row[6], str) else (row[6].get('en_US', '') if row[6] else ''),
+                    'write_date': row[7]
+                }
+                tickets.append(ticket_info)
+            
+            cursor.close()
+            logger.debug(f"Lấy được {len(tickets)} active tickets từ DB")
+            return tickets
+            
+        except Exception as e:
+            logger.error(f"Lỗi lấy active tickets: {e}")
+            return []
+    
     def get_user_tickets(self, user_email: str) -> List[Dict[str, Any]]:
         """
         Lấy tất cả tickets của một user theo email
