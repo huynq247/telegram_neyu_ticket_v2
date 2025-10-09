@@ -326,6 +326,8 @@ class TelegramBotHandler:
             group=-1
         )
         
+        logger.info("✅ Activity tracking middleware registered")
+        
         # Conversation handler cho tạo ticket - using ticket creation handler
         conversation_handler = ConversationHandler(
             entry_points=[
@@ -381,38 +383,65 @@ class TelegramBotHandler:
             ],
             states={
                 self.view_ticket_handler.VIEWING_LIST: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                     MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
                 ],
                 self.view_ticket_handler.SEARCHING: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_search_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.VIEWING_DETAIL: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                     MessageHandler(filters.Regex(r'^/detail_\d+$'), self.view_ticket_handler.ticket_detail_command)
                 ],
                 self.view_ticket_handler.WAITING_TICKET_NUMBER: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_ticket_number_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.VIEWING_COMMENTS: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.WAITING_ADD_COMMENT_TICKET: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_add_comment_ticket_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.WAITING_COMMENT_TEXT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_comment_text_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.VIEWING_AWAITING: [
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ],
                 self.view_ticket_handler.WAITING_AWAITING_COMMENT: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.view_ticket_handler.handle_awaiting_comment_input),
-                    CallbackQueryHandler(self.view_ticket_handler.handle_callback),
+                    CallbackQueryHandler(
+                        self.view_ticket_handler.handle_callback,
+                        pattern='^(view_|detail_|search_tickets|back_to_|separator|awaiting_)'
+                    ),
                 ]
             },
             fallbacks=[
@@ -482,16 +511,14 @@ class TelegramBotHandler:
             self.application = Application.builder().token(self.token).request(request).build()
             self.setup_handlers()
             
-            # Initialize and start auto-logout service
+            # Initialize auto-logout service
             self.auto_logout_service = AutoLogoutService(
                 self.auth_service, 
                 self,  # Pass bot handler for sending messages
-                inactive_minutes=10  # 10 minutes timeout
+                inactive_minutes= 10  # 10 minutes timeout
             )
-            self.auto_logout_service.start_monitoring()
             
             logger.info("✅ Telegram Bot đã được khởi tạo thành công")
-            logger.info("✅ Auto-logout service started (10 min timeout)")
         except Exception as e:
             logger.error(f"❌ Lỗi khởi tạo bot: {e}")
             raise
@@ -509,6 +536,12 @@ class TelegramBotHandler:
             # Use standard polling with better error handling
             async with self.application:
                 await self.application.start()
+                
+                # Start auto-logout monitoring AFTER application starts
+                if self.auto_logout_service:
+                    self.auto_logout_service.start_monitoring()
+                    logger.info("✅ Auto-logout service started (10 min timeout)")
+                
                 await self.application.updater.start_polling(
                     drop_pending_updates=True,
                     allowed_updates=[
@@ -607,11 +640,18 @@ class TelegramBotHandler:
             elif old_state == 'in progress' and new_state in ['waiting', 'awaiting']:
                 message += "⏳ We're waiting for additional information or approval.\nYou can add comments or check the status using /start → View My Tickets"
             
+            # Create inline keyboard with back to menu button
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="back_to_menu")]
+            ])
+            
             # Send message
             await self.application.bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                reply_markup=keyboard
             )
             
             logger.info(f"Sent state change notification to {chat_id}: {old_state} → {new_state}")

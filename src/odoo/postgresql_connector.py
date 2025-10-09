@@ -140,6 +140,35 @@ class PostgreSQLConnector:
                 logger.error(f"Failed to reconnect: {reconnect_error}")
                 raise
     
+    def _extract_chat_id_from_description(self, description: str) -> Optional[str]:
+        """
+        Extract Telegram chat_id from description field
+        Format: [TELEGRAM_CHAT_ID:123456789]
+        
+        Args:
+            description: HTML description field from ticket
+            
+        Returns:
+            chat_id as string or None if not found
+        """
+        import re
+        try:
+            # Pattern to match [TELEGRAM_CHAT_ID:123456789]
+            pattern = r'\[TELEGRAM_CHAT_ID:(-?\d+)\]'
+            match = re.search(pattern, description)
+            
+            if match:
+                chat_id = match.group(1)
+                logger.debug(f"Extracted chat_id: {chat_id}")
+                return chat_id
+            else:
+                logger.debug("No TELEGRAM_CHAT_ID found in description")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error extracting chat_id from description: {e}")
+            return None
+    
     def test_connection(self) -> bool:
         """
         Kiểm tra kết nối với PostgreSQL
@@ -515,6 +544,12 @@ class PostgreSQLConnector:
             # Format description theo template của destination
             user_description = ticket_data.get("description", f"User request from {destination}")
             description_text = config['description_template'].format(description=user_description)
+            
+            # Append Telegram chat_id for state change notifications
+            telegram_chat_id = ticket_data.get('telegram_chat_id', '')
+            if telegram_chat_id:
+                description_text += f"\n\n[TELEGRAM_CHAT_ID:{telegram_chat_id}]"
+            
             description_html = f'<div data-oe-version="1.2">{description_text}</div>'
             
             # Tạo data structure cho ticket
@@ -861,10 +896,10 @@ class PostgreSQLConnector:
     
     def get_all_active_tickets(self) -> List[Dict[str, Any]]:
         """
-        Lấy tất cả tickets từ Telegram (có tracking_id) để monitor state changes
+        Lấy tất cả tickets từ Telegram (có [TELEGRAM_CHAT_ID:xxx] trong description) để monitor state changes
         
         Returns:
-            Danh sách tickets với stage info
+            Danh sách tickets với stage info và chat_id
         """
         try:
             # Ensure connection is alive
@@ -873,20 +908,21 @@ class PostgreSQLConnector:
             cursor = self.connection.cursor()
             
             # Query ALL Telegram tickets với stage name
+            # description chứa chat_id với format: [TELEGRAM_CHAT_ID:123456789]
             query = """
                 SELECT 
                     ht.id,
                     ht.number,
                     ht.name,
-                    ht.tracking_id,
+                    ht.description,
                     ht.priority,
                     ht.stage_id,
                     hts.name as stage_name,
                     ht.write_date
                 FROM helpdesk_ticket ht
                 LEFT JOIN helpdesk_ticket_stage hts ON ht.stage_id = hts.id
-                WHERE ht.tracking_id IS NOT NULL 
-                  AND ht.tracking_id LIKE 'TG_%'
+                WHERE ht.description IS NOT NULL 
+                  AND ht.description LIKE '%[TELEGRAM_CHAT_ID:%'
                   AND ht.stage_id IS NOT NULL
                 ORDER BY ht.write_date DESC
                 LIMIT 500;
@@ -897,17 +933,22 @@ class PostgreSQLConnector:
             
             tickets = []
             for row in rows:
-                ticket_info = {
-                    'id': row[0],
-                    'number': row[1],
-                    'name': row[2],
-                    'tracking_id': row[3],
-                    'priority': row[4],
-                    'stage_id': row[5],
-                    'stage_name': row[6] if isinstance(row[6], str) else (row[6].get('en_US', '') if row[6] else ''),
-                    'write_date': row[7]
-                }
-                tickets.append(ticket_info)
+                # Extract chat_id from description
+                description = row[3] or ''
+                chat_id = self._extract_chat_id_from_description(description)
+                
+                if chat_id:  # Only add if we successfully extracted chat_id
+                    ticket_info = {
+                        'id': row[0],
+                        'number': row[1],
+                        'name': row[2],
+                        'tracking_id': f"TG_{chat_id}",  # Format: TG_123456789
+                        'priority': row[4],
+                        'stage_id': row[5],
+                        'stage_name': row[6] if isinstance(row[6], str) else (row[6].get('en_US', '') if row[6] else ''),
+                        'write_date': row[7]
+                    }
+                    tickets.append(ticket_info)
             
             cursor.close()
             logger.debug(f"Lấy được {len(tickets)} active tickets từ DB")

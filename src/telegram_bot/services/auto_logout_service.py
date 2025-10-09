@@ -50,6 +50,7 @@ class AutoLogoutService:
             user_id: Telegram user ID
         """
         self.last_activity[user_id] = datetime.now()
+        self.logger.debug(f"Tracked activity for user {user_id}")
         
         # Reset warning flag when user is active again
         if user_id in self.warned_users:
@@ -177,18 +178,30 @@ class AutoLogoutService:
             from telegram.ext import ConversationHandler
             
             if hasattr(self.telegram_handler, 'application') and self.telegram_handler.application:
-                # Clear conversation state for this user
+                # Clear ALL conversation states for this user
                 try:
-                    for handler in self.telegram_handler.application.handlers.get(0, []):
-                        if isinstance(handler, ConversationHandler):
-                            # Try to end conversation state safely
-                            try:
-                                handler.update_state(ConversationHandler.END, (user_id, user_id))
-                                self.logger.debug(f"Ended conversation state for user {user_id} before auto-logout")
-                            except Exception as conv_err:
-                                self.logger.debug(f"Could not end conversation for user {user_id}: {conv_err}")
+                    for group_id, handlers in self.telegram_handler.application.handlers.items():
+                        for handler in handlers:
+                            if isinstance(handler, ConversationHandler):
+                                # End conversation for all possible conversation keys
+                                # Key format: (user_id, user_id) for private chats
+                                try:
+                                    # Try to end with user_id key
+                                    if user_id in handler.conversations:
+                                        del handler.conversations[user_id]
+                                        self.logger.debug(f"Cleared conversation state (key={user_id}) for user {user_id}")
+                                    
+                                    # Also try tuple key format
+                                    tuple_key = (user_id, user_id)
+                                    if tuple_key in handler.conversations:
+                                        del handler.conversations[tuple_key]
+                                        self.logger.debug(f"Cleared conversation state (key={tuple_key}) for user {user_id}")
+                                    
+                                    self.logger.info(f"✅ Ended all conversation states for user {user_id} before auto-logout")
+                                except Exception as conv_err:
+                                    self.logger.debug(f"Could not end conversation for user {user_id}: {conv_err}")
                 except Exception as handler_err:
-                    self.logger.debug(f"Error accessing conversation handlers: {handler_err}")
+                    self.logger.warning(f"Error accessing conversation handlers: {handler_err}")
             
             # Send logout notification BEFORE actually logging out
             logout_message = (
@@ -231,6 +244,9 @@ class AutoLogoutService:
         
         users_to_check = list(self.last_activity.keys())
         
+        if users_to_check:
+            self.logger.debug(f"Checking {len(users_to_check)} users for inactivity")
+        
         for user_id in users_to_check:
             try:
                 # Check if user is authenticated
@@ -241,10 +257,17 @@ class AutoLogoutService:
                         del self.last_activity[user_id]
                     if user_id in self.warned_users:
                         del self.warned_users[user_id]
+                    self.logger.debug(f"User {user_id} not logged in, removed from tracking")
                     continue
+                
+                # Get inactive seconds
+                inactive_seconds = self.get_inactive_seconds(user_id)
+                if inactive_seconds:
+                    self.logger.debug(f"User {user_id} inactive for {inactive_seconds}s (timeout: {self.inactive_seconds}s)")
                 
                 # Check if should logout (no warning, just logout directly at 10 minutes)
                 if self.should_logout(user_id):
+                    self.logger.info(f"User {user_id} reached timeout, logging out...")
                     await self.auto_logout_user(user_id)
                     continue
                     
